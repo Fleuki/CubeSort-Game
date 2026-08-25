@@ -37,6 +37,8 @@ export function createHud(handlers) {
     // Когда бесплатные попытки кончились — на бейдже значок рекламы.
     update(status) {
       setBadge(undoBadge, Math.max(0, FREE_UNDO - status.undoUsed));
+      // Серая кнопка с цифрой «3» противоречит сама себе: отменять нечего.
+      undoBadge.classList.toggle('hidden', !status.canUndo);
       setBadge(hintBadge, Math.max(0, FREE_HINTS - status.hintsUsed));
       postBadge.textContent = status.extraPostUsed ? '▶' : '1';
       postBadge.classList.toggle('reward', status.extraPostUsed);

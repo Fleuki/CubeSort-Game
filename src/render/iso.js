@@ -1,12 +1,14 @@
 // Изометрия 2:1 и отрисовка деревянных деталей. Модуль только рисует,
-// состояние не трогает.
+// состояние не трогает. Тени — через src/render/shadow.js, своей
+// реализации теней здесь нет.
+
+import { drawShadow } from './shadow.js';
 
 export const PALETTE = ['#D4553F', '#E2A238', '#5B9750', '#3B71A4', '#7A57A3', '#3E9E93', '#C9628C'];
 export const SKY_TOP = '#F2EADA';
 export const TABLE = '#DFD0B4';
 export const WOOD = '#9A7B52';
 export const WOOD_DARK = '#7E6242';
-export const SHADOW = 'rgba(92, 70, 44, 0.20)';
 export const INK = '#2E2A24';
 
 const TOP_LIGHT = 0.18;
@@ -15,18 +17,27 @@ const RIGHT_DARK = 0.34;
 const STROKE_DARK = 0.5;
 const STROKE_WIDTH = 1.5;
 const SIDE_RATIO = 0.82;
-// Штырь торчит над верхним кубиком на эту долю высоты кубика.
-export const PEG_OVERHANG = 0.55;
+// Штырь торчит над верхним кубиком на эту долю высоты кубика: короткий
+// толстый шип читается как крепление, длинная спица — как шампур.
+export const PEG_OVERHANG = 0.22;
 // Радиус подставки в долях ширины кубика.
 export const BASE_RADIUS_RATIO = 1.0;
-const SYMBOL_SCALE = 0.86;
+// Толщина штыря в долях ширины кубика.
+const PEG_WIDTH = 0.16;
+const BASE_TONE = -0.16;
+const PEG_TONE = 0.06;
 // Отверстие под штырь: большая полуось в долях ширины кубика.
 const HOLE_RADIUS = 0.22;
 const HOLE_DARK = -0.55;
-const PEG_WIDTH = 0.22;
+// Символ на боковой грани: доля ширины грани.
+const SYMBOL_SCALE = 0.34;
+const SYMBOL_DARK = -0.4;
+const SYMBOL_LIGHT = 0.18;
+const GHOST_LINE = 'rgba(92, 70, 44, 0.16)';
 
-// Символ на верхней грани: доступность для дальтоников и заодно деталь,
-// от которой кубик выглядит сделанным, а не залитым.
+// Символы различают цвета для дальтоников. Живут на боковых гранях:
+// на верхней их перекрывало бы отверстие, да и видно её только у верхнего
+// кубика стопки.
 const SYMBOLS = ['circle', 'square', 'triangle', 'cross', 'star', 'diamond', 'ring'];
 
 const shadeCache = new Map();
@@ -107,64 +118,76 @@ export function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
   ctx.fill();
   ctx.stroke();
 
-  drawSymbol(ctx, x, y, size, colorIndex, base);
+  const faceY = y + h / 2 + side / 2;
+  drawSymbol(ctx, x - w / 2, faceY, size, 0.5, colorIndex, shade(base, -LEFT_DARK));
+  drawSymbol(ctx, x + w / 2, faceY, size, -0.5, colorIndex, shade(base, -RIGHT_DARK));
 }
 
-function drawSymbol(ctx, x, y, size, colorIndex, base) {
-  const r = size * SYMBOL_SCALE;
+// Символ наследует наклон грани: skew = 0.5 для левой, -0.5 для правой.
+// Это оттиск, а не наклейка — тёмный контур плюс светлая линия снизу.
+function drawSymbol(ctx, cx, cy, size, skew, colorIndex, faceColor) {
+  const r = size * SYMBOL_SCALE * 0.5;
+  const line = Math.max(1, size * 0.075);
   ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(1, 0.5);
-  ctx.strokeStyle = shade(base, -STROKE_DARK);
-  ctx.lineWidth = Math.max(1.2, size * 0.09);
+  ctx.transform(1, skew, 0, 1, cx, cy);
+  ctx.lineWidth = line;
   ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = shade(faceColor, SYMBOL_LIGHT);
+  symbolPath(ctx, SYMBOLS[colorIndex % SYMBOLS.length], r, line * 0.55);
+  ctx.stroke();
+  ctx.strokeStyle = shade(faceColor, SYMBOL_DARK);
+  symbolPath(ctx, SYMBOLS[colorIndex % SYMBOLS.length], r, 0);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function symbolPath(ctx, kind, r, dy) {
   ctx.beginPath();
-  switch (SYMBOLS[colorIndex % SYMBOLS.length]) {
+  switch (kind) {
     case 'circle':
-      ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+      ctx.arc(0, dy, r * 0.72, 0, Math.PI * 2);
       break;
     case 'square':
-      ctx.rect(-r * 0.5, -r * 0.5, r, r);
+      ctx.rect(-r * 0.62, -r * 0.62 + dy, r * 1.24, r * 1.24);
       break;
     case 'triangle':
-      ctx.moveTo(0, -r * 0.62);
-      ctx.lineTo(r * 0.6, r * 0.48);
-      ctx.lineTo(-r * 0.6, r * 0.48);
+      ctx.moveTo(0, -r * 0.78 + dy);
+      ctx.lineTo(r * 0.74, r * 0.58 + dy);
+      ctx.lineTo(-r * 0.74, r * 0.58 + dy);
       ctx.closePath();
       break;
     case 'cross':
-      ctx.moveTo(-r * 0.55, -r * 0.55);
-      ctx.lineTo(r * 0.55, r * 0.55);
-      ctx.moveTo(r * 0.55, -r * 0.55);
-      ctx.lineTo(-r * 0.55, r * 0.55);
+      ctx.moveTo(-r * 0.66, -r * 0.66 + dy);
+      ctx.lineTo(r * 0.66, r * 0.66 + dy);
+      ctx.moveTo(r * 0.66, -r * 0.66 + dy);
+      ctx.lineTo(-r * 0.66, r * 0.66 + dy);
       break;
     case 'star':
       for (let i = 0; i < 5; i += 1) {
         const angle = -Math.PI / 2 + (i * Math.PI * 2) / 5;
-        const px = Math.cos(angle) * r * 0.7;
-        const py = Math.sin(angle) * r * 0.7;
+        const px = Math.cos(angle) * r * 0.9;
+        const py = Math.sin(angle) * r * 0.9 + dy;
         if (i === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
         const inner = angle + Math.PI / 5;
-        ctx.lineTo(Math.cos(inner) * r * 0.3, Math.sin(inner) * r * 0.3);
+        ctx.lineTo(Math.cos(inner) * r * 0.4, Math.sin(inner) * r * 0.4 + dy);
       }
       ctx.closePath();
       break;
     case 'diamond':
-      ctx.moveTo(0, -r * 0.7);
-      ctx.lineTo(r * 0.55, 0);
-      ctx.lineTo(0, r * 0.7);
-      ctx.lineTo(-r * 0.55, 0);
+      ctx.moveTo(0, -r * 0.88 + dy);
+      ctx.lineTo(r * 0.68, dy);
+      ctx.lineTo(0, r * 0.88 + dy);
+      ctx.lineTo(-r * 0.68, dy);
       ctx.closePath();
       break;
     default:
-      ctx.arc(0, 0, r * 0.66, 0, Math.PI * 2);
-      ctx.moveTo(r * 0.3, 0);
-      ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+      ctx.arc(0, dy, r * 0.82, 0, Math.PI * 2);
+      ctx.moveTo(r * 0.36, dy);
+      ctx.arc(0, dy, r * 0.36, 0, Math.PI * 2);
       break;
   }
-  ctx.stroke();
-  ctx.restore();
 }
 
 // Отверстие в верхней грани: кубик надет на штырь, а не стоит рядом с ним.
@@ -184,56 +207,70 @@ export function drawHole(ctx, x, y, size, colorIndex) {
   ctx.stroke();
 }
 
-// Часть штыря над верхним кубиком: рисуется после отверстия, поэтому
-// штырь выходит из кубика, а не упирается в него.
-export function drawPegCap(ctx, x, fromY, toY, size) {
-  const w = size * PEG_WIDTH;
-  ctx.fillStyle = shade(WOOD, -0.22);
-  ctx.beginPath();
-  ctx.roundRect(x - w / 2, toY, w, Math.max(0, fromY - toY), w / 2);
-  ctx.fill();
-  ctx.fillStyle = shade(WOOD, 0.06);
-  ctx.beginPath();
-  ctx.roundRect(x - w / 2, toY, w * 0.45, Math.max(0, fromY - toY), w / 4);
-  ctx.fill();
-}
-
-export function drawShadowEllipse(ctx, x, y, rx, ry, alpha = 1) {
+// Свободное место над стопкой: контур кубика без заливки. Игрок
+// пересчитывает пустые слоты глазами, палка для этого не нужна.
+export function drawGhostSlot(ctx, x, y, size, fade = 1) {
+  const w = size;
   ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = SHADOW;
+  ctx.globalAlpha = fade;
+  const h = size / 2;
+  const side = cubeSideHeight(size);
+  ctx.strokeStyle = GHOST_LINE;
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(x, y - h);
+  ctx.lineTo(x + w, y);
+  ctx.lineTo(x, y + h);
+  ctx.lineTo(x - w, y);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - w, y);
+  ctx.lineTo(x - w, y + side);
+  ctx.moveTo(x, y + h);
+  ctx.lineTo(x, y + h + side);
+  ctx.moveTo(x + w, y);
+  ctx.lineTo(x + w, y + side);
+  ctx.stroke();
   ctx.restore();
 }
 
-// Штырь на круглой подставке. Тень падает вправо-вниз под 30°.
-export function drawPost(ctx, x, baseY, pegHeight, size) {
+// Короткий шип над верхним кубиком. Рисуется после отверстия, поэтому
+// выходит из кубика, а не упирается в него.
+export function drawPegStub(ctx, x, topY, size) {
+  const w = size * 2 * PEG_WIDTH;
+  const height = cubeSideHeight(size) * PEG_OVERHANG;
+  const top = topY - height;
+  ctx.fillStyle = shade(WOOD, PEG_TONE);
+  ctx.beginPath();
+  ctx.roundRect(x - w / 2, top, w, height + w * 0.3, w * 0.35);
+  ctx.fill();
+  ctx.fillStyle = shade(WOOD, PEG_TONE + 0.12);
+  ctx.beginPath();
+  ctx.roundRect(x - w / 2, top, w * 0.42, height + w * 0.2, w * 0.2);
+  ctx.fill();
+  ctx.strokeStyle = shade(WOOD, -0.3);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(x, top + w * 0.14, w / 2, w * 0.16, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+// Подставка: на пару тонов темнее штыря, иначе нижний кубик сливается с ней.
+export function drawPostBase(ctx, x, baseY, size) {
   const baseRx = size * BASE_RADIUS_RATIO;
   const baseRy = baseRx / 2;
-  const pegW = size * PEG_WIDTH;
+  drawShadow(ctx, x, baseY, baseRy * 0.9, baseRx * 2);
 
-  drawShadowEllipse(ctx, x + baseRy * 0.9, baseY + baseRy * 0.5, baseRx * 1.05, baseRy * 0.95);
-
-  ctx.fillStyle = shade(WOOD, -0.22);
+  ctx.fillStyle = shade(WOOD, BASE_TONE - 0.12);
   ctx.beginPath();
-  ctx.roundRect(x - pegW / 2, baseY - pegHeight, pegW, pegHeight, pegW / 2);
+  ctx.ellipse(x, baseY + baseRy * 0.18, baseRx, baseRy, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = shade(WOOD, 0.06);
-  ctx.beginPath();
-  ctx.roundRect(x - pegW / 2, baseY - pegHeight, pegW * 0.45, pegHeight, pegW / 4);
-  ctx.fill();
-
-  ctx.fillStyle = WOOD_DARK;
-  ctx.beginPath();
-  ctx.ellipse(x, baseY + baseRy * 0.16, baseRx, baseRy, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = WOOD;
+  ctx.fillStyle = shade(WOOD, BASE_TONE);
   ctx.beginPath();
   ctx.ellipse(x, baseY, baseRx, baseRy, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = shade(WOOD, -0.28);
+  ctx.strokeStyle = shade(WOOD, BASE_TONE - 0.16);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.ellipse(x, baseY, baseRx * 0.72, baseRy * 0.72, 0, 0, Math.PI * 2);

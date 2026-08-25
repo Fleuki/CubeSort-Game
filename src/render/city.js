@@ -1,7 +1,8 @@
 // Макет города на столе. Растёт между уровнями, геймплей не трогает —
 // это чистая награда.
 
-import { PALETTE, WOOD, SHADOW, TABLE, shade } from './iso.js';
+import { PALETTE, WOOD, TABLE, shade } from './iso.js';
+import { drawShadow, drawShadowAlong } from './shadow.js';
 
 const DISTRICT_SIZE = 10;
 const DISTRICT_KINDS = [
@@ -23,6 +24,7 @@ const TILE_OF_PLATE = 0.8;
 const MIN_RINGS = 2;
 const JITTER = 0.06;
 const BUILD_SCALE = 0.5;
+const MAX_HALF_WIDTH = 0.72;
 
 export function createCity(buildings = []) {
   return { buildings: buildings.slice(), pending: null, dirty: true, canvas: null, ctx: null };
@@ -110,11 +112,27 @@ function buildingPoint(rect, count, building) {
   const tileH = tileW * PLATE_ASPECT;
   const cell = spiralCell(building.index);
   const shift = jitterOf(building.seed);
-  return {
-    x: disc.x + (cell.gx - cell.gy) * (tileW / 2) + shift.jx * tileW,
-    y: disc.y + (cell.gx + cell.gy) * (tileH / 2) + shift.jy * tileH,
-    scale: tileW * BUILD_SCALE
-  };
+  const scale = tileW * BUILD_SCALE;
+  const point = clampToPlate(
+    disc,
+    disc.x + (cell.gx - cell.gy) * (tileW / 2) + shift.jx * tileW,
+    disc.y + (cell.gx + cell.gy) * (tileH / 2) + shift.jy * tileH,
+    scale * MAX_HALF_WIDTH
+  );
+  point.scale = scale;
+  return point;
+}
+
+// Постройка не должна свисать с площадки: держим её внутри овала
+// с запасом на половину собственной ширины.
+function clampToPlate(disc, x, y, halfWidth) {
+  const limitX = Math.max(1, disc.rx - halfWidth);
+  const limitY = Math.max(1, disc.ry - halfWidth * PLATE_ASPECT);
+  const dx = x - disc.x;
+  const dy = y - disc.y;
+  const reach = Math.sqrt((dx / limitX) ** 2 + (dy / limitY) ** 2);
+  if (reach <= 1) return { x, y };
+  return { x: disc.x + dx / reach, y: disc.y + dy / reach };
 }
 
 // Отдельный offscreen: макет перерисовывается при изменении, а не каждый кадр.
@@ -134,17 +152,9 @@ export function getCityCanvas(city, rect) {
   if (city.dirty) {
     const local = { x: 0, y: 0, width: w, height: h };
     city.ctx.clearRect(0, 0, w, h);
-    drawPlot(city.ctx, local, city);
-    const count = layoutCount(city);
-    const placed = city.buildings.map((building) => ({
-      building,
-      point: buildingPoint(local, count, building)
-    }));
-    // Ближние к зрителю рисуются позже.
-    placed.sort((a, b) => a.point.y - b.point.y);
-    for (let i = 0; i < placed.length; i += 1) {
-      paintBuilding(city.ctx, placed[i].building, placed[i].point, 1);
-    }
+    drawGround(city.ctx, local, city);
+    const items = sceneItems(local, city);
+    for (let i = 0; i < items.length; i += 1) paintItem(city.ctx, items[i], 1);
     city.dirty = false;
   }
   return city.canvas;
@@ -157,15 +167,53 @@ export function drawBuilding(ctx, rect, city, building, appear) {
   ctx.beginPath();
   ctx.rect(rect.x, rect.y, rect.width, rect.height);
   ctx.clip();
-  paintBuilding(ctx, building, point, appear);
+  paintItem(ctx, { kind: building.kind, building, point, groundY: point.y }, appear);
   ctx.restore();
+}
+
+// Все объекты макета в одном списке и с явной точкой касания земли:
+// глубина считается по основанию, иначе высокий дом «перекрывает»
+// колодец, который стоит ближе к зрителю.
+function sceneItems(rect, city) {
+  const disc = plate(rect, layoutCount(city));
+  const items = [];
+  const props = [
+    { kind: 'tree', ux: -0.62, uy: 0.3, scale: 0.32, variant: 0 },
+    { kind: 'tree', ux: 0.64, uy: -0.06, scale: 0.28, variant: 1 },
+    { kind: 'well', ux: -0.18, uy: 0.6, scale: 0.3, variant: 0 }
+  ];
+  for (let i = 0; i < props.length; i += 1) {
+    const prop = props[i];
+    const scale = disc.rx * prop.scale;
+    const point = clampToPlate(disc, disc.x + disc.rx * prop.ux, disc.y + disc.ry * prop.uy, scale * 0.5);
+    point.scale = scale;
+    items.push({ kind: prop.kind, point, groundY: point.y, variant: prop.variant });
+  }
+  const count = layoutCount(city);
+  for (let i = 0; i < city.buildings.length; i += 1) {
+    const building = city.buildings[i];
+    const point = buildingPoint(rect, count, building);
+    items.push({ kind: building.kind, building, point, groundY: point.y });
+  }
+  items.sort((a, b) => a.groundY - b.groundY);
+  return items;
+}
+
+function paintItem(ctx, item, appear) {
+  if (item.building) {
+    paintBuilding(ctx, item.building, item.point, appear);
+    return;
+  }
+  const rise = (1 - appear) * item.point.scale * 2.2;
+  if (item.kind === 'well') well(ctx, item.point.x, item.point.y + rise, item.point.scale);
+  else tree(ctx, item.point.x, item.point.y + rise, item.point.scale, item.variant);
 }
 
 // --- участок --------------------------------------------------------------
 
 // До первой постройки участок уже обжитой: дорога, ограда, деревья, колодец.
 // Пустой овал читался бы как ошибка загрузки, а не как награда.
-function drawPlot(ctx, rect, city) {
+function drawGround(ctx, rect, city) {
   const disc = plate(rect, layoutCount(city));
   ctx.fillStyle = 'rgba(154, 123, 82, 0.12)';
   ctx.beginPath();
@@ -178,21 +226,6 @@ function drawPlot(ctx, rect, city) {
 
   drawRoad(ctx, disc);
   drawFence(ctx, disc);
-
-  const props = [
-    { kind: 'tree', point: propPoint(disc, -0.66, 0.3, 0.34) },
-    { kind: 'tree', point: propPoint(disc, 0.7, -0.06, 0.3) },
-    { kind: 'well', point: propPoint(disc, -0.2, 0.62, 0.32) }
-  ];
-  props.sort((a, b) => a.point.y - b.point.y);
-  for (let i = 0; i < props.length; i += 1) {
-    if (props[i].kind === 'tree') tree(ctx, props[i].point.x, props[i].point.y, props[i].point.scale, i);
-    else well(ctx, props[i].point.x, props[i].point.y, props[i].point.scale);
-  }
-}
-
-function propPoint(disc, ux, uy, scale) {
-  return { x: disc.x + disc.rx * ux, y: disc.y + disc.ry * uy, scale: disc.rx * scale };
 }
 
 function drawRoad(ctx, disc) {
@@ -213,14 +246,16 @@ function drawRoad(ctx, disc) {
 
 function drawFence(ctx, disc) {
   const posts = 9;
-  ctx.strokeStyle = shade(WOOD, -0.08);
-  ctx.lineWidth = Math.max(1.2, disc.rx * 0.012);
   const points = [];
   for (let i = 0; i < posts; i += 1) {
     const angle = Math.PI * (1.12 + (i / (posts - 1)) * 0.76);
     points.push({ x: disc.x + Math.cos(angle) * disc.rx * 0.92, y: disc.y + Math.sin(angle) * disc.ry * 0.92 });
   }
   const height = disc.ry * 0.24;
+  // Одна тень на всю дугу, а не пятно под каждой секцией.
+  drawShadowAlong(ctx, points, height, disc.rx * 0.03);
+  ctx.strokeStyle = shade(WOOD, -0.08);
+  ctx.lineWidth = Math.max(1.2, disc.rx * 0.012);
   for (let rail = 0; rail < 2; rail += 1) {
     ctx.beginPath();
     const lift = height * (rail === 0 ? 0.75 : 0.35);
@@ -233,15 +268,18 @@ function drawFence(ctx, disc) {
     ctx.stroke();
   }
   for (let i = 0; i < points.length; i += 1) {
+    // Крайние столбики выше остальных: иначе забор обрывается в пустоту.
+    const edge = i === 0 || i === points.length - 1;
+    ctx.lineWidth = Math.max(1.2, disc.rx * (edge ? 0.02 : 0.012));
     ctx.beginPath();
-    ctx.moveTo(points[i].x, points[i].y);
-    ctx.lineTo(points[i].x, points[i].y - height);
+    ctx.moveTo(points[i].x, points[i].y + (edge ? height * 0.12 : 0));
+    ctx.lineTo(points[i].x, points[i].y - height * (edge ? 1.3 : 1));
     ctx.stroke();
   }
 }
 
 function well(ctx, x, y, scale) {
-  groundShadow(ctx, x, y, scale * 0.42);
+  drawShadow(ctx, x, y, scale * 0.86, scale * 0.68);
   ctx.fillStyle = shade(WOOD, -0.35);
   ctx.beginPath();
   ctx.ellipse(x, y - scale * 0.1, scale * 0.34, scale * 0.17, 0, 0, Math.PI * 2);
@@ -300,17 +338,10 @@ function paintBuilding(ctx, building, point, appear) {
   }
 }
 
-function groundShadow(ctx, x, y, w) {
-  ctx.fillStyle = SHADOW;
-  ctx.beginPath();
-  ctx.ellipse(x + w * 0.35, y + w * 0.16, w * 1.15, w * 0.55, 0, 0, Math.PI * 2);
-  ctx.fill();
-}
-
 // Изометрическая коробка: (x, y) — центр нижней грани на столе.
 function prism(ctx, x, y, w, h, color) {
   const half = w / 2;
-  groundShadow(ctx, x, y, w * 0.9);
+  drawShadow(ctx, x, y, h + w * 0.5, w * 2);
   ctx.strokeStyle = shade(color, -0.5);
   ctx.lineWidth = 1.2;
 
@@ -399,7 +430,7 @@ function windows(ctx, x, y, w, h, color, rows) {
 }
 
 function tree(ctx, x, y, scale, variant) {
-  groundShadow(ctx, x, y, scale * 0.5);
+  drawShadow(ctx, x, y, scale * 1.05, scale * 0.72);
   ctx.fillStyle = WOOD;
   ctx.fillRect(x - scale * 0.07, y - scale * 0.55, scale * 0.14, scale * 0.55);
   const crown = variant % 2 === 0 ? '#5B9750' : '#4C8547';
@@ -414,7 +445,7 @@ function tree(ctx, x, y, scale, variant) {
 }
 
 function lamp(ctx, x, y, scale) {
-  groundShadow(ctx, x, y, scale * 0.32);
+  drawShadow(ctx, x, y, scale * 0.95, scale * 0.3);
   ctx.strokeStyle = shade(WOOD, -0.3);
   ctx.lineWidth = Math.max(1.4, scale * 0.09);
   ctx.beginPath();
@@ -428,7 +459,7 @@ function lamp(ctx, x, y, scale) {
 }
 
 function bridge(ctx, x, y, scale, color) {
-  groundShadow(ctx, x, y, scale * 0.9);
+  drawShadow(ctx, x, y, scale * 0.62, scale * 1.8);
   ctx.strokeStyle = shade(color, -0.1);
   ctx.lineWidth = scale * 0.22;
   ctx.lineCap = 'round';

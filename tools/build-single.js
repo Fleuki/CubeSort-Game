@@ -19,6 +19,7 @@ const MODULES = [
   'src/game/solver.js',
   'src/game/generator.js',
   'src/game/history.js',
+  'src/render/shadow.js',
   'src/render/iso.js',
   'src/render/layout.js',
   'src/render/city.js',

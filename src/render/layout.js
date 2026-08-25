@@ -22,6 +22,8 @@ const STACK_ALLOWANCE = 1.6;
 const ROW_GAP_SHARE = 0.05;
 const SINGLE_ROW_LIMIT = 5;
 const HIT_PADDING = 0.2;
+// Задний ряд чуть меньше переднего — иначе два ряда читаются как таблица.
+const BACK_ROW_SCALE = 0.94;
 
 // Вертикальный шаг стопки в долях ширины кубика: кубик рисуется
 // в изометрии 2:1, поэтому по высоте он занимает меньше, чем по ширине.
@@ -61,11 +63,13 @@ export function computeLayout(width, height, postCount, capacity) {
     const rowTop = groupTop + row * (blockHeight + rowGap);
     const rowWidth = count * spacing;
     const startX = (width - rowWidth) / 2 + spacing / 2;
+    const scale = rows > 1 && row === 0 ? BACK_ROW_SCALE : 1;
     posts.push({
       index: i,
       x: startX + inRow * spacing,
-      baseY: rowTop + pegHeight,
-      row
+      baseY: rowTop + pegHeight * scale,
+      row,
+      scale
     });
   }
 
@@ -108,11 +112,11 @@ function fitCubeWidth(width, perRow, rowHeight, capacity) {
 
 // Хитбокс шире визуального штыря на 20% с каждой стороны — пальцу нужен запас.
 export function hitTest(layout, px, py) {
-  const half = layout.size * (1 + HIT_PADDING);
   for (let i = 0; i < layout.posts.length; i += 1) {
     const post = layout.posts[i];
-    const top = post.baseY - layout.pegHeight - layout.size * 0.5;
-    const bottom = post.baseY + layout.size * 0.7;
+    const half = layout.size * post.scale * (1 + HIT_PADDING);
+    const top = post.baseY - (layout.pegHeight + layout.size * 0.5) * post.scale;
+    const bottom = post.baseY + layout.size * post.scale * 0.7;
     if (px >= post.x - half && px <= post.x + half && py >= top && py <= bottom) return i;
   }
   return -1;
@@ -121,8 +125,9 @@ export function hitTest(layout, px, py) {
 // Экранная позиция центра верхней грани кубика на слоте slot (снизу вверх).
 export function slotPosition(layout, postIndex, slot) {
   const post = layout.posts[postIndex];
+  const scale = post.scale;
   return {
     x: post.x,
-    y: post.baseY - layout.size * 0.25 - (slot + 1) * layout.step
+    y: post.baseY - layout.size * scale * 0.25 - (slot + 1) * layout.step * scale
   };
 }
