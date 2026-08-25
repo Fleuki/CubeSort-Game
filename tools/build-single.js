@@ -28,6 +28,7 @@ const MODULES = [
   'src/audio/sfx.js',
   'src/ui/hud.js',
   'src/ui/screens.js',
+  'src/ui/debug.js',
   'src/platform/none.js',
   'src/platform/yandex.js',
   'src/platform/playgama.js',

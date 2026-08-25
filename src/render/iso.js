@@ -15,7 +15,15 @@ const RIGHT_DARK = 0.34;
 const STROKE_DARK = 0.5;
 const STROKE_WIDTH = 1.5;
 const SIDE_RATIO = 0.82;
-const SYMBOL_SCALE = 0.42;
+// Штырь торчит над верхним кубиком на эту долю высоты кубика.
+export const PEG_OVERHANG = 0.55;
+// Радиус подставки в долях ширины кубика.
+export const BASE_RADIUS_RATIO = 1.0;
+const SYMBOL_SCALE = 0.86;
+// Отверстие под штырь: большая полуось в долях ширины кубика.
+const HOLE_RADIUS = 0.22;
+const HOLE_DARK = -0.55;
+const PEG_WIDTH = 0.22;
 
 // Символ на верхней грани: доступность для дальтоников и заодно деталь,
 // от которой кубик выглядит сделанным, а не залитым.
@@ -159,6 +167,37 @@ function drawSymbol(ctx, x, y, size, colorIndex, base) {
   ctx.restore();
 }
 
+// Отверстие в верхней грани: кубик надет на штырь, а не стоит рядом с ним.
+export function drawHole(ctx, x, y, size, colorIndex) {
+  const base = PALETTE[colorIndex % PALETTE.length];
+  const rx = size * 2 * HOLE_RADIUS;
+  const ry = rx / 2;
+  ctx.fillStyle = shade(base, HOLE_DARK);
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Светлая дуга по нижнему краю читается как внутренняя стенка.
+  ctx.strokeStyle = shade(base, -0.18);
+  ctx.lineWidth = Math.max(1, size * 0.06);
+  ctx.beginPath();
+  ctx.ellipse(x, y + ry * 0.12, rx * 0.92, ry * 0.92, 0, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.stroke();
+}
+
+// Часть штыря над верхним кубиком: рисуется после отверстия, поэтому
+// штырь выходит из кубика, а не упирается в него.
+export function drawPegCap(ctx, x, fromY, toY, size) {
+  const w = size * PEG_WIDTH;
+  ctx.fillStyle = shade(WOOD, -0.22);
+  ctx.beginPath();
+  ctx.roundRect(x - w / 2, toY, w, Math.max(0, fromY - toY), w / 2);
+  ctx.fill();
+  ctx.fillStyle = shade(WOOD, 0.06);
+  ctx.beginPath();
+  ctx.roundRect(x - w / 2, toY, w * 0.45, Math.max(0, fromY - toY), w / 4);
+  ctx.fill();
+}
+
 export function drawShadowEllipse(ctx, x, y, rx, ry, alpha = 1) {
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -171,9 +210,9 @@ export function drawShadowEllipse(ctx, x, y, rx, ry, alpha = 1) {
 
 // Штырь на круглой подставке. Тень падает вправо-вниз под 30°.
 export function drawPost(ctx, x, baseY, pegHeight, size) {
-  const baseRx = size * 1.15;
+  const baseRx = size * BASE_RADIUS_RATIO;
   const baseRy = baseRx / 2;
-  const pegW = size * 0.22;
+  const pegW = size * PEG_WIDTH;
 
   drawShadowEllipse(ctx, x + baseRy * 0.9, baseY + baseRy * 0.5, baseRx * 1.05, baseRy * 0.95);
 

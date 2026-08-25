@@ -9,6 +9,8 @@ const HINT_MAX_DEPTH = 12;
 const HINT_MAX_NODES = 20000;
 const SOLVE_MAX_NODES = 400000;
 const SOLVE_MAX_DEPTH = 220;
+const OPTIMAL_MAX_DEPTH = 20;
+const OPTIMAL_MAX_NODES = 400000;
 
 // Подсказка: кратчайший путь до победы в пределах глубины.
 // Если не нашли — любой ход, сливающий две группы одного цвета.
@@ -97,4 +99,74 @@ export function solve(posts, capacity, maxNodes = SOLVE_MAX_NODES) {
   }
 
   return dfs(posts, 0) ? path.slice() : null;
+}
+
+// Нижняя оценка числа оставшихся ходов: для каждого цвета, разбросанного
+// по k столбикам, нужно минимум k-1 ходов, и один ход уменьшает эту сумму
+// не больше чем на единицу. Оценка допустимая, значит IDA* даёт оптимум.
+function scatterHeuristic(posts, colors) {
+  let total = 0;
+  for (let color = 0; color < colors; color += 1) {
+    let count = 0;
+    for (let i = 0; i < posts.length; i += 1) {
+      if (posts[i].indexOf(color) >= 0) count += 1;
+    }
+    if (count > 0) total += count - 1;
+  }
+  return total;
+}
+
+function colorCount(posts) {
+  let max = -1;
+  for (let i = 0; i < posts.length; i += 1) {
+    for (let j = 0; j < posts[i].length; j += 1) {
+      if (posts[i][j] > max) max = posts[i][j];
+    }
+  }
+  return max + 1;
+}
+
+// Оптимальное число ходов: IDA* по нормализованному состоянию с потолком
+// по глубине. null — оптимум за потолком (или за лимитом узлов).
+export function findOptimal(posts, capacity, maxDepth = OPTIMAL_MAX_DEPTH, maxNodes = OPTIMAL_MAX_NODES) {
+  const colors = colorCount(posts);
+  let nodes = 0;
+  let overflow = false;
+
+  function search(current, g, limit, seen) {
+    const h = scatterHeuristic(current, colors);
+    if (h === 0 && isSolved(current, capacity)) return g;
+    const f = g + h;
+    if (f > limit) return f;
+    if (nodes > maxNodes) {
+      overflow = true;
+      return Infinity;
+    }
+    let next = Infinity;
+    const moves = listMoves(current, capacity);
+    moves.sort((a, b) => moveScore(current, b, capacity) - moveScore(current, a, capacity));
+    for (let i = 0; i < moves.length; i += 1) {
+      nodes += 1;
+      const child = applyMove(current, moves[i].from, moves[i].to, capacity);
+      const key = normalizeKey(child);
+      const best = seen.get(key);
+      if (best !== undefined && best <= g + 1) continue;
+      seen.set(key, g + 1);
+      const result = search(child, g + 1, limit, seen);
+      if (result <= limit) return result;
+      if (result < next) next = result;
+    }
+    return next;
+  }
+
+  let limit = scatterHeuristic(posts, colors);
+  while (limit <= maxDepth) {
+    const seen = new Map([[normalizeKey(posts), 0]]);
+    const result = search(posts, 0, limit, seen);
+    if (overflow) return null;
+    if (result <= limit) return result;
+    if (result === Infinity) return null;
+    limit = result;
+  }
+  return null;
 }

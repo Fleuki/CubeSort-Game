@@ -17,6 +17,7 @@ export function createScreens(handlers) {
   const soundState = document.getElementById('sound-state');
   const vibroState = document.getElementById('vibro-state');
   const toast = document.getElementById('toast');
+  const restartButton = document.getElementById('btn-restart');
   let toastTimer = 0;
 
   document.getElementById('btn-play').addEventListener('click', handlers.play);
@@ -26,6 +27,7 @@ export function createScreens(handlers) {
   document.getElementById('btn-sound').addEventListener('click', handlers.toggleSound);
   document.getElementById('btn-vibro').addEventListener('click', handlers.toggleVibro);
   document.getElementById('btn-reset').addEventListener('click', handlers.resetProgress);
+  document.getElementById('btn-restart').addEventListener('click', handlers.restart);
 
   function hideAll() {
     Object.keys(nodes).forEach((key) => nodes[key].classList.add('hidden'));
@@ -54,9 +56,11 @@ export function createScreens(handlers) {
       winCity.textContent = `Домов в городе: ${cityCount}`;
       nodes.win.classList.remove('hidden');
     },
-    showSettings(settings) {
+    showSettings(settings, inGame) {
       soundState.textContent = settings.muted ? 'выкл' : 'вкл';
       vibroState.textContent = settings.vibro ? 'вкл' : 'выкл';
+      // «Заново» нужен только внутри уровня.
+      restartButton.classList.toggle('hidden', !inGame);
       nodes.settings.classList.remove('hidden');
     },
     hideSettings() {

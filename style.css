@@ -92,7 +92,7 @@ html, body {
 
 .hud-bottom {
   display: flex;
-  gap: 6px;
+  gap: 10px;
   justify-content: center;
 }
 
@@ -134,8 +134,9 @@ html, body {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
-  max-width: 92px;
-  padding: 8px 4px 6px;
+  max-width: 116px;
+  min-height: 48px;
+  padding: 8px 6px 6px;
   border: none;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.62);
@@ -308,5 +309,5 @@ html, body {
 
 @media (max-height: 620px) {
   .menu-card { padding: 18px 16px; }
-  .tool { font-size: 10px; padding: 6px 3px 5px; }
+  .tool { font-size: 10px; padding: 6px 4px 5px; }
 }

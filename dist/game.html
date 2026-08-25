@@ -100,7 +100,7 @@ html, body {
 
 .hud-bottom {
   display: flex;
-  gap: 6px;
+  gap: 10px;
   justify-content: center;
 }
 
@@ -142,8 +142,9 @@ html, body {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
-  max-width: 92px;
-  padding: 8px 4px 6px;
+  max-width: 116px;
+  min-height: 48px;
+  padding: 8px 6px 6px;
   border: none;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.62);
@@ -316,7 +317,7 @@ html, body {
 
 @media (max-height: 620px) {
   .menu-card { padding: 18px 16px; }
-  .tool { font-size: 10px; padding: 6px 3px 5px; }
+  .tool { font-size: 10px; padding: 6px 4px 5px; }
 }
 
 </style>
@@ -339,9 +340,6 @@ html, body {
     </button>
     <button class="tool" id="btn-post" type="button">
       <span class="tool-icon">+</span><span class="tool-label">Столбик</span><span class="tool-badge" id="post-badge">1</span>
-    </button>
-    <button class="tool" id="btn-restart" type="button">
-      <span class="tool-icon">⟳</span><span class="tool-label">Заново</span>
     </button>
   </div>
 </div>
@@ -376,6 +374,7 @@ html, body {
 <div id="screen-settings" class="screen hidden">
   <div class="menu-card">
     <div class="win-title">Настройки</div>
+    <button class="toggle" id="btn-restart" type="button">Начать уровень заново<span class="toggle-state">⟳</span></button>
     <button class="toggle" id="btn-sound" type="button">Звук<span class="toggle-state" id="sound-state">вкл</span></button>
     <button class="toggle" id="btn-vibro" type="button">Вибрация<span class="toggle-state" id="vibro-state">вкл</span></button>
     <button class="toggle danger" id="btn-reset" type="button">Сбросить прогресс</button>
@@ -388,7 +387,7 @@ html, body {
 <script type="module">
 const __levels_levels_js = (() => {
 // Сгенерировано tools/gen-levels.js. Руками не править.
-const LEVELS = [{"id":1,"seed":7932,"capacity":3,"colors":3,"posts":[[0],[1],[2,2,2],[0,0],[1,1]],"parMoves":2},{"id":2,"seed":15851,"capacity":3,"colors":3,"posts":[[0],[1,2],[2,2],[1,1],[0,0]],"parMoves":3},{"id":3,"seed":23770,"capacity":3,"colors":3,"posts":[[0,0],[1,1,0],[2],[2],[1,2]],"parMoves":4},{"id":4,"seed":31689,"capacity":4,"colors":3,"posts":[[0,2,0,1],[1,1,0,2],[2,1],[],[],[2,0]],"parMoves":9},{"id":5,"seed":39608,"capacity":4,"colors":3,"posts":[[0,2],[1,0,1,2],[],[0,1,0],[],[2,1,2]],"parMoves":12},{"id":6,"seed":47527,"capacity":4,"colors":3,"posts":[[0,2,0],[1,0],[2,1,2,0],[],[],[1,1,2]],"parMoves":10},{"id":7,"seed":55446,"capacity":4,"colors":4,"posts":[[0,2,3,2],[1,0,0,1],[],[3,1,1,2],[3,0,2,3],[]],"parMoves":11},{"id":8,"seed":63365,"capacity":4,"colors":4,"posts":[[2,0,1],[1,3,1],[2,0,2],[3,3,0,1],[3,2,0],[]],"parMoves":14},{"id":9,"seed":71284,"capacity":4,"colors":4,"posts":[[3,2],[1,0,2,0],[],[3,3,2,0],[1,0,2],[1,1,3]],"parMoves":12},{"id":10,"seed":79203,"capacity":4,"colors":4,"posts":[[0,0,1,3],[1,2],[2,3,3,1],[],[1,0,3,2],[0,2]],"parMoves":11},{"id":11,"seed":87122,"capacity":4,"colors":5,"posts":[[0,0,4,2],[1,4,3,1],[2,3],[],[4,3],[0,0,2,3],[4,1,1,2]],"parMoves":13},{"id":12,"seed":95041,"capacity":4,"colors":5,"posts":[[],[1,1,2,4],[0],[3,2,3,0],[4,2,3,0],[1,4,4,2],[1,3,0]],"parMoves":15},{"id":13,"seed":102960,"capacity":4,"colors":5,"posts":[[0,4,3,1],[],[2,4,3,2],[],[4,4,2,3],[2,1,3,1],[0,0,0,1]],"parMoves":14},{"id":14,"seed":110879,"capacity":4,"colors":5,"posts":[[0,3],[1,0,2],[],[3,2,0],[4,4,3,2],[1,1,0,2],[4,4,1,3]],"parMoves":13},{"id":15,"seed":118798,"capacity":4,"colors":5,"posts":[[0,0,3],[1,4,3],[2,4,1,0],[],[4,3,4],[2,2,1],[0,1,2,3]],"parMoves":14},{"id":16,"seed":126717,"capacity":4,"colors":5,"posts":[[0,1,2],[],[2],[3,3,2,3],[4,0,3,0],[1,4,4,1],[4,1,0,2]],"parMoves":15},{"id":17,"seed":134636,"capacity":4,"colors":5,"posts":[[],[1,3,0],[2,1,3],[3,0,2],[4,4,3,0],[1,2,0,2],[4,4,1]],"parMoves":14},{"id":18,"seed":142555,"capacity":4,"colors":5,"posts":[[0,2],[1,4,0,2],[],[3,3,0,4],[4,0],[3,3,1,2],[1,1,4,2]],"parMoves":13},{"id":19,"seed":150474,"capacity":4,"colors":5,"posts":[[0,0,4,2],[1,0],[3,1,3],[],[4,4,2,3],[1,1,3],[4,2,0,2]],"parMoves":14},{"id":20,"seed":158393,"capacity":4,"colors":5,"posts":[[0,1,2,3],[1,4,3,4],[2,2,3],[],[4,3],[1,0,4],[1,0,2,0]],"parMoves":15},{"id":21,"seed":166312,"capacity":4,"colors":6,"posts":[[],[1,0,3,0],[2,5,3,0],[],[4,4,1,3],[5,2,3,0],[4,4,5,1],[5,2,2,1]],"parMoves":18},{"id":22,"seed":174231,"capacity":4,"colors":6,"posts":[[5,3,1,4],[],[2,3,5,1],[3,5,2],[4,1],[5,1,4],[0,0,2,3],[0,4,2,0]],"parMoves":19},{"id":23,"seed":182150,"capacity":4,"colors":6,"posts":[[5,4],[1,1,2,5],[2,2,1,4],[3,3,0],[],[5,3,4],[0,0,1,4],[2,5,3,0]],"parMoves":15},{"id":24,"seed":190069,"capacity":4,"colors":6,"posts":[[0,4,4,3],[1,1,1,0],[2,3],[3,0],[4,2],[5,1,2],[5,0,3],[2,5,5,4]],"parMoves":14},{"id":25,"seed":197988,"capacity":4,"colors":6,"posts":[[0,4,5],[1,1,1,3],[2,2,5],[3,2,3,4],[],[5,4],[0,2,3,5],[0,0,1,4]],"parMoves":15},{"id":26,"seed":205907,"capacity":4,"colors":6,"posts":[[0,4,3,2],[1,1,3,2],[],[3,3,0],[4,4,5],[5,2],[1,1,0,4],[5,0,5,2]],"parMoves":16},{"id":27,"seed":213826,"capacity":4,"colors":6,"posts":[[0,2,0,3],[1,1,1,5],[2,4,3],[],[4,2,0,4],[5,5,5,2],[1,0,3],[4,3]],"parMoves":15},{"id":28,"seed":221745,"capacity":4,"colors":6,"posts":[[4,3],[1,1,1,0],[],[3,1,5,4],[4,0,4,2],[5,0,3,2],[5,5,0,2],[2,3]],"parMoves":17},{"id":29,"seed":229664,"capacity":4,"colors":6,"posts":[[0,2,4],[1,5,3,4],[2,2,3,4],[3,1,5],[],[5,4],[0,0,0,1],[1,3,2,5]],"parMoves":16},{"id":30,"seed":237583,"capacity":4,"colors":6,"posts":[[0,3,4],[1,1,0,4],[2,2,3,4],[],[4],[5,0,5,3],[1,1,2,3],[5,5,0,2]],"parMoves":16},{"id":31,"seed":245502,"capacity":4,"colors":6,"posts":[[0,3],[1,1,3,5],[2,2,5,4],[3,1,4,0],[],[5,5,2],[2,0,4],[1,0,3,4]],"parMoves":16},{"id":32,"seed":253421,"capacity":4,"colors":6,"posts":[[0,0,1,4],[1,1,0,5],[2,3,2,5],[1,5,4],[4],[],[3,3,2,5],[0,3,2,4]],"parMoves":18},{"id":33,"seed":261340,"capacity":4,"colors":6,"posts":[[0,2,0,3],[1,3,2,3],[],[],[4,4,4,2],[5,0,3,0],[5,5,5,1],[4,1,2,1]],"parMoves":16},{"id":34,"seed":269259,"capacity":4,"colors":6,"posts":[[],[1,1,4,3],[2,2,4,1],[3,3,0,4],[4,5],[5,0],[2,2,0,1],[5,3,0,5]],"parMoves":16},{"id":35,"seed":277178,"capacity":4,"colors":6,"posts":[[0,1,4],[1,1,0,4],[2,2,0,3],[3,5,2],[5,5,4],[],[3,1,4],[3,2,0,5]],"parMoves":17},{"id":36,"seed":285097,"capacity":5,"colors":6,"posts":[[0,0,0,0,4],[1,1,1,3,1],[2,5],[3,4,2],[4,5,2,5],[5,4,4,2],[3,3,3,1,2],[0,5]],"parMoves":16},{"id":37,"seed":293016,"capacity":5,"colors":6,"posts":[[0,0,0,5,2],[1,1,1,0,3],[2,5,2],[],[4,4,4,3,2],[5,3,3,4,5],[3,2],[1,1,0,4,5]],"parMoves":19},{"id":38,"seed":300935,"capacity":5,"colors":6,"posts":[[0,0,0,0,1],[1,1,1,1,4],[2,5,2,3],[],[4,4,3,5,3],[5,4,3],[4,5,2],[0,2,2,5,3]],"parMoves":17},{"id":39,"seed":308854,"capacity":5,"colors":6,"posts":[[0,3,2],[1,5,0,1,0],[2],[2],[4,4,4,4,3],[5,4,5,5,2],[0,1,1,1,3],[5,3,0,3,2]],"parMoves":19},{"id":40,"seed":316773,"capacity":5,"colors":6,"posts":[[2,3],[1,1,0],[2,2,0,1],[0,0,0,2],[4,3,1],[5,4,3,1,3],[4,4,2,3],[5,5,5,5,4]],"parMoves":17},{"id":41,"seed":324692,"capacity":5,"colors":6,"posts":[[0,0,2,2,1],[1,4,4,1,5],[2,1,4,5],[3,3,3,5],[4,4,3,3,0],[],[1,0,5],[2,2,0,5]],"parMoves":17},{"id":42,"seed":332611,"capacity":5,"colors":6,"posts":[[0,4,4,0],[1,4,2,0,5],[2,2,3,4,0],[3,3,5],[],[1,1,3,2,5],[5,5,3,2,4],[1,1,0]],"parMoves":21},{"id":43,"seed":340530,"capacity":5,"colors":6,"posts":[[0,0,1],[1,1,4],[2,3,4,4,2],[3,0,2,1],[4,4,3,2],[5,2],[5,1,0,3],[5,5,5,0,3]],"parMoves":18},{"id":44,"seed":348449,"capacity":5,"colors":7,"posts":[[0,0,1,1,3],[1,5,5,2,0],[2,4,1,3],[3],[4,4,4,4,0],[5,5,5,2,3],[6,6,6,6,1],[6,2,0,3,2]],"parMoves":17},{"id":45,"seed":356368,"capacity":5,"colors":7,"posts":[[0,2,0,2],[1,1,4,4,3],[2,0,2],[3,3,3,0],[4,4,6,6,4],[5,5,1,1,6],[6,3,0,2],[5,5,5,1,6]],"parMoves":18},{"id":46,"seed":364287,"capacity":5,"colors":7,"posts":[[0,0,0,4,2],[1,1,1,1,3],[2],[3,4,5,6,2],[4,4,0,2],[5,5,5,5,1],[6,6,6,3,2],[3,4,6,3,0]],"parMoves":17},{"id":47,"seed":372206,"capacity":5,"colors":7,"posts":[[0,0,1,0,1],[1],[2,2,2,6,5],[3,3,3,5,2],[4,3,3,2,0],[5,5,0,1],[6,6,6,5,1],[4,4,4,4,6]],"parMoves":16},{"id":48,"seed":380125,"capacity":5,"colors":7,"posts":[[0,0,0,3,5],[1,1,4,5],[2,2,2,2,0],[3,3,6,6,1],[4,4,4,5,3],[5],[6,2,0,1,5],[6,6,3,1,4]],"parMoves":17},{"id":49,"seed":388044,"capacity":5,"colors":7,"posts":[[0,0,6,3,1],[],[2,2,6,0,1],[3,3,2,2,4],[4,4,4,3,1],[5,5,5,5,2],[6,6,0,0,1],[5,4,3,6,1]],"parMoves":18},{"id":50,"seed":395963,"capacity":5,"colors":7,"posts":[[0,0,3,6,3],[1,0,0,2],[2,2,2,6,5],[5,2,3],[4,4,4,5,4],[5,5,3],[6,6,6,4,3],[1,1,1,1,0]],"parMoves":17},{"id":51,"seed":403882,"capacity":5,"colors":7,"posts":[[0,1,2],[1,1,1,0,4],[],[3,3,3,4],[4,4,2],[5,5,0,3,2],[6,6,0,1,0],[6,6,6,3,2],[5,5,5,4,2]],"parMoves":18},{"id":52,"seed":411801,"capacity":5,"colors":7,"posts":[[0,5,4],[1,1,5,0,4],[2,2,2,6,0],[3,3,3,1,6],[],[5,5,0,4],[6,3,6,4],[2,2,3,5],[1,1,6,0,4]],"parMoves":22},{"id":53,"seed":419720,"capacity":5,"colors":7,"posts":[[0,0,1,2],[1,5],[],[3,3,3,4,1],[4,4,4,2],[5,2,0,5,2],[6,6,6,0,5],[6,6,1,5,2],[3,3,1,4,0]],"parMoves":20},{"id":54,"seed":427639,"capacity":5,"colors":7,"posts":[[],[1,0],[2,2,0,1],[3,3,2,4,1],[4,4,2,2,3],[5,4,0,1],[6,5,5,3,0],[6,6,6,1,6],[5,5,3,4,0]],"parMoves":22},{"id":55,"seed":435558,"capacity":5,"colors":7,"posts":[[6,3],[1,1,1,5],[2,2,0],[3,3,5,6],[4,4,4,1,2],[5,5,6,0],[6,3,6],[4,4,2,5,0],[1,0,0,2,3]],"parMoves":20},{"id":56,"seed":443477,"capacity":5,"colors":7,"posts":[[0,0,3,4,6],[],[2,2,2,1,3],[3,3,6,4],[4,1],[5,5,3,4],[6,6,1,1,0],[2,2,0,6,1],[5,5,5,0,4]],"parMoves":20},{"id":57,"seed":451396,"capacity":5,"colors":7,"posts":[[0,0,0,4,2],[1,4,2,2,3],[6,6,2,3,4],[],[4,6,2],[5,5,6,3],[6,3,0,3],[4,5,5,0],[1,1,1,1,5]],"parMoves":21},{"id":58,"seed":459315,"capacity":5,"colors":7,"posts":[[4],[1,1,1,1,6],[2,2,2,1,6],[3,0,0,5,4],[4],[5,0,0,5,4],[6,5,4],[2,2,3,6,5],[3,3,3,6,0]],"parMoves":20},{"id":59,"seed":467234,"capacity":5,"colors":7,"posts":[[0,0,1],[],[2,6,6,0,4],[3,3,3,0,5],[4,4,4,3,1],[5,3,0,5,1],[6,6,6,2],[2,2,5],[4,5,1,2,1]],"parMoves":20},{"id":60,"seed":475153,"capacity":5,"colors":7,"posts":[[0,1,6,2],[4,6,1,2],[],[3,3,3,4,1],[4,2],[5,5,5,5,1],[6,4,1,6,2],[3,3,6,4,2],[0,0,0,0,5]],"parMoves":21}];
+const LEVELS = [{"id":1,"seed":7932,"capacity":3,"colors":3,"posts":[[0],[1],[2,2,2],[0,0],[1,1]],"parMoves":2},{"id":2,"seed":15851,"capacity":3,"colors":3,"posts":[[0],[1,2],[2,2],[1,1],[0,0]],"parMoves":3},{"id":3,"seed":23770,"capacity":3,"colors":3,"posts":[[0,0],[1,1,0],[2],[2],[1,2]],"parMoves":4},{"id":4,"seed":31689,"capacity":4,"colors":3,"posts":[[0,2,0,1],[1,1,0,2],[2,1],[],[],[2,0]],"parMoves":8},{"id":5,"seed":39608,"capacity":4,"colors":3,"posts":[[0,2],[1,0,1,2],[],[0,1,0],[],[2,1,2]],"parMoves":9},{"id":6,"seed":47527,"capacity":4,"colors":3,"posts":[[0,2,0],[1,0],[2,1,2,0],[],[],[1,1,2]],"parMoves":8},{"id":7,"seed":55446,"capacity":4,"colors":4,"posts":[[0,2,3,2],[1,0,0,1],[],[3,1,1,2],[3,0,2,3],[]],"parMoves":11},{"id":8,"seed":63365,"capacity":4,"colors":4,"posts":[[2,0,1],[1,3,1],[2,0,2],[3,3,0,1],[3,2,0],[]],"parMoves":12},{"id":9,"seed":71284,"capacity":4,"colors":4,"posts":[[3,2],[1,0,2,0],[],[3,3,2,0],[1,0,2],[1,1,3]],"parMoves":12},{"id":10,"seed":79203,"capacity":4,"colors":4,"posts":[[0,0,1,3],[1,2],[2,3,3,1],[],[1,0,3,2],[0,2]],"parMoves":11},{"id":11,"seed":87122,"capacity":4,"colors":5,"posts":[[0,0,4,2],[1,4,3,1],[2,3],[],[4,3],[0,0,2,3],[4,1,1,2]],"parMoves":13},{"id":12,"seed":95041,"capacity":4,"colors":5,"posts":[[],[1,1,2,4],[0],[3,2,3,0],[4,2,3,0],[1,4,4,2],[1,3,0]],"parMoves":14},{"id":13,"seed":102960,"capacity":4,"colors":5,"posts":[[0,4,3,1],[],[2,4,3,2],[],[4,4,2,3],[2,1,3,1],[0,0,0,1]],"parMoves":14},{"id":14,"seed":110879,"capacity":4,"colors":5,"posts":[[0,3],[1,0,2],[],[3,2,0],[4,4,3,2],[1,1,0,2],[4,4,1,3]],"parMoves":13},{"id":15,"seed":118798,"capacity":4,"colors":5,"posts":[[0,0,3],[1,4,3],[2,4,1,0],[],[4,3,4],[2,2,1],[0,1,2,3]],"parMoves":14},{"id":16,"seed":126717,"capacity":4,"colors":5,"posts":[[0,1,2],[],[2],[3,3,2,3],[4,0,3,0],[1,4,4,1],[4,1,0,2]],"parMoves":13},{"id":17,"seed":134636,"capacity":4,"colors":5,"posts":[[],[1,3,0],[2,1,3],[3,0,2],[4,4,3,0],[1,2,0,2],[4,4,1]],"parMoves":14},{"id":18,"seed":142555,"capacity":4,"colors":5,"posts":[[0,2],[1,4,0,2],[],[3,3,0,4],[4,0],[3,3,1,2],[1,1,4,2]],"parMoves":13},{"id":19,"seed":150474,"capacity":4,"colors":5,"posts":[[0,0,4,2],[1,0],[3,1,3],[],[4,4,2,3],[1,1,3],[4,2,0,2]],"parMoves":13},{"id":20,"seed":158393,"capacity":4,"colors":5,"posts":[[0,1,2,3],[1,4,3,4],[2,2,3],[],[4,3],[1,0,4],[1,0,2,0]],"parMoves":15},{"id":21,"seed":166312,"capacity":4,"colors":6,"posts":[[],[1,0,3,0],[2,5,3,0],[],[4,4,1,3],[5,2,3,0],[4,4,5,1],[5,2,2,1]],"parMoves":17},{"id":22,"seed":174231,"capacity":4,"colors":6,"posts":[[5,3,1,4],[],[2,3,5,1],[3,5,2],[4,1],[5,1,4],[0,0,2,3],[0,4,2,0]],"parMoves":18},{"id":23,"seed":182150,"capacity":4,"colors":6,"posts":[[5,4],[1,1,2,5],[2,2,1,4],[3,3,0],[],[5,3,4],[0,0,1,4],[2,5,3,0]],"parMoves":15},{"id":24,"seed":190069,"capacity":4,"colors":6,"posts":[[0,4,4,3],[1,1,1,0],[2,3],[3,0],[4,2],[5,1,2],[5,0,3],[2,5,5,4]],"parMoves":14},{"id":25,"seed":197988,"capacity":4,"colors":6,"posts":[[0,4,5],[1,1,1,3],[2,2,5],[3,2,3,4],[],[5,4],[0,2,3,5],[0,0,1,4]],"parMoves":15},{"id":26,"seed":205907,"capacity":4,"colors":6,"posts":[[0,4,3,2],[1,1,3,2],[],[3,3,0],[4,4,5],[5,2],[1,1,0,4],[5,0,5,2]],"parMoves":15},{"id":27,"seed":213826,"capacity":4,"colors":6,"posts":[[0,2,0,3],[1,1,1,5],[2,4,3],[],[4,2,0,4],[5,5,5,2],[1,0,3],[4,3]],"parMoves":15},{"id":28,"seed":221745,"capacity":4,"colors":6,"posts":[[4,3],[1,1,1,0],[],[3,1,5,4],[4,0,4,2],[5,0,3,2],[5,5,0,2],[2,3]],"parMoves":16},{"id":29,"seed":229664,"capacity":4,"colors":6,"posts":[[0,2,4],[1,5,3,4],[2,2,3,4],[3,1,5],[],[5,4],[0,0,0,1],[1,3,2,5]],"parMoves":16},{"id":30,"seed":237583,"capacity":4,"colors":6,"posts":[[0,3,4],[1,1,0,4],[2,2,3,4],[],[4],[5,0,5,3],[1,1,2,3],[5,5,0,2]],"parMoves":15},{"id":31,"seed":245502,"capacity":4,"colors":6,"posts":[[0,3],[1,1,3,5],[2,2,5,4],[3,1,4,0],[],[5,5,2],[2,0,4],[1,0,3,4]],"parMoves":16},{"id":32,"seed":253421,"capacity":4,"colors":6,"posts":[[0,0,1,4],[1,1,0,5],[2,3,2,5],[1,5,4],[4],[],[3,3,2,5],[0,3,2,4]],"parMoves":17},{"id":33,"seed":261340,"capacity":4,"colors":6,"posts":[[0,2,0,3],[1,3,2,3],[],[],[4,4,4,2],[5,0,3,0],[5,5,5,1],[4,1,2,1]],"parMoves":16},{"id":34,"seed":269259,"capacity":4,"colors":6,"posts":[[],[1,1,4,3],[2,2,4,1],[3,3,0,4],[4,5],[5,0],[2,2,0,1],[5,3,0,5]],"parMoves":15},{"id":35,"seed":277178,"capacity":4,"colors":6,"posts":[[0,1,4],[1,1,0,4],[2,2,0,3],[3,5,2],[5,5,4],[],[3,1,4],[3,2,0,5]],"parMoves":16},{"id":36,"seed":285097,"capacity":5,"colors":6,"posts":[[0,0,0,0,4],[1,1,1,3,1],[2,5],[3,4,2],[4,5,2,5],[5,4,4,2],[3,3,3,1,2],[0,5]],"parMoves":16},{"id":37,"seed":293016,"capacity":5,"colors":6,"posts":[[0,0,0,5,2],[1,1,1,0,3],[2,5,2],[],[4,4,4,3,2],[5,3,3,4,5],[3,2],[1,1,0,4,5]],"parMoves":17},{"id":38,"seed":300935,"capacity":5,"colors":6,"posts":[[0,0,0,0,1],[1,1,1,1,4],[2,5,2,3],[],[4,4,3,5,3],[5,4,3],[4,5,2],[0,2,2,5,3]],"parMoves":17},{"id":39,"seed":308854,"capacity":5,"colors":6,"posts":[[0,3,2],[1,5,0,1,0],[2],[2],[4,4,4,4,3],[5,4,5,5,2],[0,1,1,1,3],[5,3,0,3,2]],"parMoves":19},{"id":40,"seed":316773,"capacity":5,"colors":6,"posts":[[2,3],[1,1,0],[2,2,0,1],[0,0,0,2],[4,3,1],[5,4,3,1,3],[4,4,2,3],[5,5,5,5,4]],"parMoves":17},{"id":41,"seed":324692,"capacity":5,"colors":6,"posts":[[0,0,2,2,1],[1,4,4,1,5],[2,1,4,5],[3,3,3,5],[4,4,3,3,0],[],[1,0,5],[2,2,0,5]],"parMoves":17},{"id":42,"seed":332611,"capacity":5,"colors":6,"posts":[[0,4,4,0],[1,4,2,0,5],[2,2,3,4,0],[3,3,5],[],[1,1,3,2,5],[5,5,3,2,4],[1,1,0]],"parMoves":19},{"id":43,"seed":340530,"capacity":5,"colors":6,"posts":[[0,0,1],[1,1,4],[2,3,4,4,2],[3,0,2,1],[4,4,3,2],[5,2],[5,1,0,3],[5,5,5,0,3]],"parMoves":18},{"id":44,"seed":348449,"capacity":5,"colors":7,"posts":[[0,0,1,1,3],[1,5,5,2,0],[2,4,1,3],[3],[4,4,4,4,0],[5,5,5,2,3],[6,6,6,6,1],[6,2,0,3,2]],"parMoves":17},{"id":45,"seed":356368,"capacity":5,"colors":7,"posts":[[0,2,0,2],[1,1,4,4,3],[2,0,2],[3,3,3,0],[4,4,6,6,4],[5,5,1,1,6],[6,3,0,2],[5,5,5,1,6]],"parMoves":18},{"id":46,"seed":364287,"capacity":5,"colors":7,"posts":[[0,0,0,4,2],[1,1,1,1,3],[2],[3,4,5,6,2],[4,4,0,2],[5,5,5,5,1],[6,6,6,3,2],[3,4,6,3,0]],"parMoves":17},{"id":47,"seed":372206,"capacity":5,"colors":7,"posts":[[0,0,1,0,1],[1],[2,2,2,6,5],[3,3,3,5,2],[4,3,3,2,0],[5,5,0,1],[6,6,6,5,1],[4,4,4,4,6]],"parMoves":16},{"id":48,"seed":380125,"capacity":5,"colors":7,"posts":[[0,0,0,3,5],[1,1,4,5],[2,2,2,2,0],[3,3,6,6,1],[4,4,4,5,3],[5],[6,2,0,1,5],[6,6,3,1,4]],"parMoves":17},{"id":49,"seed":388044,"capacity":5,"colors":7,"posts":[[0,0,6,3,1],[],[2,2,6,0,1],[3,3,2,2,4],[4,4,4,3,1],[5,5,5,5,2],[6,6,0,0,1],[5,4,3,6,1]],"parMoves":18},{"id":50,"seed":395963,"capacity":5,"colors":7,"posts":[[0,0,3,6,3],[1,0,0,2],[2,2,2,6,5],[5,2,3],[4,4,4,5,4],[5,5,3],[6,6,6,4,3],[1,1,1,1,0]],"parMoves":17},{"id":51,"seed":403882,"capacity":5,"colors":7,"posts":[[0,1,2],[1,1,1,0,4],[],[3,3,3,4],[4,4,2],[5,5,0,3,2],[6,6,0,1,0],[6,6,6,3,2],[5,5,5,4,2]],"parMoves":18},{"id":52,"seed":411801,"capacity":5,"colors":7,"posts":[[0,5,4],[1,1,5,0,4],[2,2,2,6,0],[3,3,3,1,6],[],[5,5,0,4],[6,3,6,4],[2,2,3,5],[1,1,6,0,4]],"parMoves":18,"parExact":false},{"id":53,"seed":419720,"capacity":5,"colors":7,"posts":[[0,0,1,2],[1,5],[],[3,3,3,4,1],[4,4,4,2],[5,2,0,5,2],[6,6,6,0,5],[6,6,1,5,2],[3,3,1,4,0]],"parMoves":20},{"id":54,"seed":427639,"capacity":5,"colors":7,"posts":[[],[1,0],[2,2,0,1],[3,3,2,4,1],[4,4,2,2,3],[5,4,0,1],[6,5,5,3,0],[6,6,6,1,6],[5,5,3,4,0]],"parMoves":18,"parExact":false},{"id":55,"seed":435558,"capacity":5,"colors":7,"posts":[[6,3],[1,1,1,5],[2,2,0],[3,3,5,6],[4,4,4,1,2],[5,5,6,0],[6,3,6],[4,4,2,5,0],[1,0,0,2,3]],"parMoves":20},{"id":56,"seed":443477,"capacity":5,"colors":7,"posts":[[0,0,3,4,6],[],[2,2,2,1,3],[3,3,6,4],[4,1],[5,5,3,4],[6,6,1,1,0],[2,2,0,6,1],[5,5,5,0,4]],"parMoves":19},{"id":57,"seed":451396,"capacity":5,"colors":7,"posts":[[0,0,0,4,2],[1,4,2,2,3],[6,6,2,3,4],[],[4,6,2],[5,5,6,3],[6,3,0,3],[4,5,5,0],[1,1,1,1,5]],"parMoves":17,"parExact":false},{"id":58,"seed":459315,"capacity":5,"colors":7,"posts":[[4],[1,1,1,1,6],[2,2,2,1,6],[3,0,0,5,4],[4],[5,0,0,5,4],[6,5,4],[2,2,3,6,5],[3,3,3,6,0]],"parMoves":19},{"id":59,"seed":467234,"capacity":5,"colors":7,"posts":[[0,0,1],[],[2,6,6,0,4],[3,3,3,0,5],[4,4,4,3,1],[5,3,0,5,1],[6,6,6,2],[2,2,5],[4,5,1,2,1]],"parMoves":20},{"id":60,"seed":475153,"capacity":5,"colors":7,"posts":[[0,1,6,2],[4,6,1,2],[],[3,3,3,4,1],[4,2],[5,5,5,5,1],[6,4,1,6,2],[3,3,6,4,2],[0,0,0,0,5]],"parMoves":17,"parExact":false}];
 
 return { LEVELS };
 })();
@@ -536,6 +535,8 @@ const HINT_MAX_DEPTH = 12;
 const HINT_MAX_NODES = 20000;
 const SOLVE_MAX_NODES = 400000;
 const SOLVE_MAX_DEPTH = 220;
+const OPTIMAL_MAX_DEPTH = 20;
+const OPTIMAL_MAX_NODES = 400000;
 
 // Подсказка: кратчайший путь до победы в пределах глубины.
 // Если не нашли — любой ход, сливающий две группы одного цвета.
@@ -626,7 +627,77 @@ function solve(posts, capacity, maxNodes = SOLVE_MAX_NODES) {
   return dfs(posts, 0) ? path.slice() : null;
 }
 
-return { findHint, solve };
+// Нижняя оценка числа оставшихся ходов: для каждого цвета, разбросанного
+// по k столбикам, нужно минимум k-1 ходов, и один ход уменьшает эту сумму
+// не больше чем на единицу. Оценка допустимая, значит IDA* даёт оптимум.
+function scatterHeuristic(posts, colors) {
+  let total = 0;
+  for (let color = 0; color < colors; color += 1) {
+    let count = 0;
+    for (let i = 0; i < posts.length; i += 1) {
+      if (posts[i].indexOf(color) >= 0) count += 1;
+    }
+    if (count > 0) total += count - 1;
+  }
+  return total;
+}
+
+function colorCount(posts) {
+  let max = -1;
+  for (let i = 0; i < posts.length; i += 1) {
+    for (let j = 0; j < posts[i].length; j += 1) {
+      if (posts[i][j] > max) max = posts[i][j];
+    }
+  }
+  return max + 1;
+}
+
+// Оптимальное число ходов: IDA* по нормализованному состоянию с потолком
+// по глубине. null — оптимум за потолком (или за лимитом узлов).
+function findOptimal(posts, capacity, maxDepth = OPTIMAL_MAX_DEPTH, maxNodes = OPTIMAL_MAX_NODES) {
+  const colors = colorCount(posts);
+  let nodes = 0;
+  let overflow = false;
+
+  function search(current, g, limit, seen) {
+    const h = scatterHeuristic(current, colors);
+    if (h === 0 && isSolved(current, capacity)) return g;
+    const f = g + h;
+    if (f > limit) return f;
+    if (nodes > maxNodes) {
+      overflow = true;
+      return Infinity;
+    }
+    let next = Infinity;
+    const moves = listMoves(current, capacity);
+    moves.sort((a, b) => moveScore(current, b, capacity) - moveScore(current, a, capacity));
+    for (let i = 0; i < moves.length; i += 1) {
+      nodes += 1;
+      const child = applyMove(current, moves[i].from, moves[i].to, capacity);
+      const key = normalizeKey(child);
+      const best = seen.get(key);
+      if (best !== undefined && best <= g + 1) continue;
+      seen.set(key, g + 1);
+      const result = search(child, g + 1, limit, seen);
+      if (result <= limit) return result;
+      if (result < next) next = result;
+    }
+    return next;
+  }
+
+  let limit = scatterHeuristic(posts, colors);
+  while (limit <= maxDepth) {
+    const seen = new Map([[normalizeKey(posts), 0]]);
+    const result = search(posts, 0, limit, seen);
+    if (overflow) return null;
+    if (result <= limit) return result;
+    if (result === Infinity) return null;
+    limit = result;
+  }
+  return null;
+}
+
+return { findHint, solve, findOptimal };
 })();
 const __src_game_generator_js = (() => {
 // Обратная генерация: от решённого состояния идём назад по ходам,
@@ -843,7 +914,15 @@ const RIGHT_DARK = 0.34;
 const STROKE_DARK = 0.5;
 const STROKE_WIDTH = 1.5;
 const SIDE_RATIO = 0.82;
-const SYMBOL_SCALE = 0.42;
+// Штырь торчит над верхним кубиком на эту долю высоты кубика.
+const PEG_OVERHANG = 0.55;
+// Радиус подставки в долях ширины кубика.
+const BASE_RADIUS_RATIO = 1.0;
+const SYMBOL_SCALE = 0.86;
+// Отверстие под штырь: большая полуось в долях ширины кубика.
+const HOLE_RADIUS = 0.22;
+const HOLE_DARK = -0.55;
+const PEG_WIDTH = 0.22;
 
 // Символ на верхней грани: доступность для дальтоников и заодно деталь,
 // от которой кубик выглядит сделанным, а не залитым.
@@ -987,6 +1066,37 @@ function drawSymbol(ctx, x, y, size, colorIndex, base) {
   ctx.restore();
 }
 
+// Отверстие в верхней грани: кубик надет на штырь, а не стоит рядом с ним.
+function drawHole(ctx, x, y, size, colorIndex) {
+  const base = PALETTE[colorIndex % PALETTE.length];
+  const rx = size * 2 * HOLE_RADIUS;
+  const ry = rx / 2;
+  ctx.fillStyle = shade(base, HOLE_DARK);
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Светлая дуга по нижнему краю читается как внутренняя стенка.
+  ctx.strokeStyle = shade(base, -0.18);
+  ctx.lineWidth = Math.max(1, size * 0.06);
+  ctx.beginPath();
+  ctx.ellipse(x, y + ry * 0.12, rx * 0.92, ry * 0.92, 0, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.stroke();
+}
+
+// Часть штыря над верхним кубиком: рисуется после отверстия, поэтому
+// штырь выходит из кубика, а не упирается в него.
+function drawPegCap(ctx, x, fromY, toY, size) {
+  const w = size * PEG_WIDTH;
+  ctx.fillStyle = shade(WOOD, -0.22);
+  ctx.beginPath();
+  ctx.roundRect(x - w / 2, toY, w, Math.max(0, fromY - toY), w / 2);
+  ctx.fill();
+  ctx.fillStyle = shade(WOOD, 0.06);
+  ctx.beginPath();
+  ctx.roundRect(x - w / 2, toY, w * 0.45, Math.max(0, fromY - toY), w / 4);
+  ctx.fill();
+}
+
 function drawShadowEllipse(ctx, x, y, rx, ry, alpha = 1) {
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -999,9 +1109,9 @@ function drawShadowEllipse(ctx, x, y, rx, ry, alpha = 1) {
 
 // Штырь на круглой подставке. Тень падает вправо-вниз под 30°.
 function drawPost(ctx, x, baseY, pegHeight, size) {
-  const baseRx = size * 1.15;
+  const baseRx = size * BASE_RADIUS_RATIO;
   const baseRy = baseRx / 2;
-  const pegW = size * 0.22;
+  const pegW = size * PEG_WIDTH;
 
   drawShadowEllipse(ctx, x + baseRy * 0.9, baseY + baseRy * 0.5, baseRx * 1.05, baseRy * 0.95);
 
@@ -1029,56 +1139,76 @@ function drawPost(ctx, x, baseY, pegHeight, size) {
   ctx.stroke();
 }
 
-return { PALETTE, SKY_TOP, TABLE, WOOD, WOOD_DARK, SHADOW, INK, shade, cubeSideHeight, drawCube, drawShadowEllipse, drawPost };
+return { PALETTE, SKY_TOP, TABLE, WOOD, WOOD_DARK, SHADOW, INK, PEG_OVERHANG, BASE_RADIUS_RATIO, shade, cubeSideHeight, drawCube, drawHole, drawPegCap, drawShadowEllipse, drawPost };
 })();
 const __src_render_layout_js = (() => {
 // Расчёт позиций под размер экрана. Ничего не рисует — только числа.
 
-const { cubeSideHeight } = __src_render_iso_js;
+const { cubeSideHeight, PEG_OVERHANG, BASE_RADIUS_RATIO } = __src_render_iso_js;
 
-const CITY_SHARE = 0.42;
-const HUD_TOP = 64;
-const HUD_BOTTOM = 96;
-const MIN_CUBE = 13;
-const MAX_CUBE = 46;
-const GAP_RATIO = 0.55;
+// Доли доступной высоты (без полос HUD). Поле — герой экрана,
+// поэтому ему отдано больше половины.
+const CITY_SHARE = 0.32;
+const AIR_SHARE = 0.06;
+const FIELD_SHARE = 0.62;
+
+const HUD_TOP = 56;
+const HUD_BOTTOM = 78;
+const SIDE_MARGIN = 12;
+const MIN_SIDE_MARGIN = 4;
+const MIN_BASE_GAP = 8;
+const MIN_CUBE_WIDTH = 40;
+const MAX_CUBE_WIDTH = 104;
+const STEP_SLACK = 0.5;
+const CUBE_OF_STEP = 0.82;
+const FIELD_USABLE = 0.8;
+const STACK_ALLOWANCE = 1.6;
+const ROW_GAP_SHARE = 0.05;
+const SINGLE_ROW_LIMIT = 5;
 const HIT_PADDING = 0.2;
-const SIDE_MARGIN = 10;
+
+// Вертикальный шаг стопки в долях ширины кубика: кубик рисуется
+// в изометрии 2:1, поэтому по высоте он занимает меньше, чем по ширине.
+const VERTICAL_UNIT = cubeSideHeight(0.5);
 
 function computeLayout(width, height, postCount, capacity) {
-  const cityHeight = Math.round(height * CITY_SHARE);
-  const fieldTop = cityHeight + HUD_TOP * 0.2;
-  const fieldBottom = height - HUD_BOTTOM;
-  const fieldHeight = Math.max(120, fieldBottom - fieldTop);
+  const available = Math.max(200, height - HUD_TOP - HUD_BOTTOM);
+  const cityHeight = available * CITY_SHARE;
+  const fieldHeight = available * FIELD_SHARE;
+  const fieldTop = HUD_TOP + cityHeight + available * AIR_SHARE;
 
-  const rows = postCount > 5 ? 2 : 1;
+  const rows = postCount > SINGLE_ROW_LIMIT ? 2 : 1;
   const perRow = Math.ceil(postCount / rows);
+  const rowGap = rows > 1 ? fieldHeight * ROW_GAP_SHARE : 0;
+  const rowHeight = (fieldHeight - rowGap * (rows - 1)) / rows;
 
-  // Размер кубика зажат и по ширине ряда, и по высоте столбика.
-  const byWidth = (width - SIDE_MARGIN * 2) / (perRow * (2 + GAP_RATIO));
-  const byHeight = (fieldHeight / rows) / (capacity * 0.95 + 2.1);
-  const size = Math.max(MIN_CUBE, Math.min(MAX_CUBE, Math.min(byWidth, byHeight)));
-
+  const cubeWidth = fitCubeWidth(width, perRow, rowHeight, capacity);
+  const size = cubeWidth / 2;
   const step = cubeSideHeight(size);
   const stackHeight = capacity * step + size * 0.5;
-  const rowBlock = stackHeight + size * 1.3;
-  const rowGap = rows > 1 ? size * 0.7 : 0;
-  const total = rows * rowBlock + (rows - 1) * rowGap;
-  // Ряды столбиков центрируются в поле, иначе снизу остаётся дыра.
-  const startY = fieldTop + Math.max(0, (fieldHeight - total) / 2);
+  // Штырь торчит над верхней гранью полной стопки ровно на PEG_OVERHANG
+  // высоты кубика — поэтому в высоту входит и половина верхнего ромба.
+  const pegHeight = (capacity + PEG_OVERHANG) * step + size * 0.25;
+  // Ряды стоят единым блоком по центру поля: при вместимости 3 стопки
+  // низкие, и прижимать их к краю — значит рвать экран пополам.
+  const baseRadiusY = size * BASE_RADIUS_RATIO * 0.5;
+  const blockHeight = pegHeight + baseRadiusY * 2;
+  const groupHeight = rows * blockHeight + (rows - 1) * rowGap;
+  const groupTop = fieldTop + Math.max(0, (fieldHeight - groupHeight) / 2);
 
+  const spacing = stepFor(width, perRow, cubeWidth);
   const posts = [];
   for (let i = 0; i < postCount; i += 1) {
     const row = Math.floor(i / perRow);
     const inRow = i - row * perRow;
     const count = Math.min(perRow, postCount - row * perRow);
-    const spacing = size * (2 + GAP_RATIO);
+    const rowTop = groupTop + row * (blockHeight + rowGap);
     const rowWidth = count * spacing;
     const startX = (width - rowWidth) / 2 + spacing / 2;
     posts.push({
       index: i,
       x: startX + inRow * spacing,
-      baseY: startY + rowBlock * (row + 1) + rowGap * row,
+      baseY: rowTop + pegHeight,
       row
     });
   }
@@ -1086,13 +1216,38 @@ function computeLayout(width, height, postCount, capacity) {
   return {
     width,
     height,
-    city: { x: 0, y: 0, width, height: cityHeight },
+    city: { x: 0, y: HUD_TOP, width, height: cityHeight },
+    field: { x: 0, y: fieldTop, width, height: fieldHeight },
     posts,
+    rows,
     size,
+    cubeWidth,
     step,
     stackHeight,
+    pegHeight,
+    spacing,
     capacity
   };
+}
+
+function stepFor(width, perRow, cubeWidth) {
+  // Если кубик упёрся в нижнюю границу, поле раздвигается за счёт полей
+  // по краям, а не за счёт размера кубика.
+  const wide = (width - SIDE_MARGIN * 2) / (perRow + STEP_SLACK);
+  const needed = cubeWidth / CUBE_OF_STEP;
+  if (needed <= wide) return wide;
+  const tight = (width - MIN_SIDE_MARGIN * 2) / (perRow + STEP_SLACK);
+  return Math.min(needed, tight);
+}
+
+function fitCubeWidth(width, perRow, rowHeight, capacity) {
+  const step = (width - SIDE_MARGIN * 2) / (perRow + STEP_SLACK);
+  const byWidth = step * CUBE_OF_STEP;
+  const byHeight = (rowHeight * FIELD_USABLE) / ((capacity + STACK_ALLOWANCE) * VERTICAL_UNIT);
+  // Подставки не должны слипаться: между соседними — минимум MIN_BASE_GAP.
+  const byGap = (step - MIN_BASE_GAP) / BASE_RADIUS_RATIO;
+  const fitted = Math.min(byWidth, byHeight, byGap);
+  return Math.max(MIN_CUBE_WIDTH, Math.min(MAX_CUBE_WIDTH, fitted));
 }
 
 // Хитбокс шире визуального штыря на 20% с каждой стороны — пальцу нужен запас.
@@ -1100,7 +1255,7 @@ function hitTest(layout, px, py) {
   const half = layout.size * (1 + HIT_PADDING);
   for (let i = 0; i < layout.posts.length; i += 1) {
     const post = layout.posts[i];
-    const top = post.baseY - layout.stackHeight - layout.size;
+    const top = post.baseY - layout.pegHeight - layout.size * 0.5;
     const bottom = post.baseY + layout.size * 0.7;
     if (px >= post.x - half && px <= post.x + half && py >= top && py <= bottom) return i;
   }
@@ -1122,12 +1277,9 @@ const __src_render_city_js = (() => {
 // Макет города на столе. Растёт между уровнями, геймплей не трогает —
 // это чистая награда.
 
-const { PALETTE, WOOD, SHADOW, shade } = __src_render_iso_js;
+const { PALETTE, WOOD, SHADOW, TABLE, shade } = __src_render_iso_js;
 
-const GRID_COLS = 7;
-const GRID_ROWS = 6;
 const DISTRICT_SIZE = 10;
-const KINDS = ['house', 'house', 'tower', 'park', 'lamp'];
 const DISTRICT_KINDS = [
   ['house', 'house', 'house', 'park'],
   ['house', 'tower', 'tower', 'lamp'],
@@ -1135,45 +1287,39 @@ const DISTRICT_KINDS = [
   ['tower', 'house', 'park', 'lamp']
 ];
 
+// Площадка: на пустом городе занимает 60% ширины зоны и растёт
+// с застройкой, но не бесконечно.
+const PLATE_BASE_SHARE = 0.6;
+const PLATE_GROWTH = 0.05;
+const PLATE_GROWTH_LIMIT = 14;
+const PLATE_ASPECT = 0.46;
+const PLATE_MAX_SHARE = 0.94;
+const PLATE_CENTER_Y = 0.62;
+const TILE_OF_PLATE = 0.8;
+const MIN_RINGS = 2;
+const JITTER = 0.06;
+const BUILD_SCALE = 0.5;
+
 function createCity(buildings = []) {
-  return { buildings: buildings.slice(), dirty: true, canvas: null, ctx: null };
-}
-
-// Порядок застройки: от центра макета наружу, с детерминированным
-// разбросом — город растёт пятном, а не рядами.
-const SLOT_ORDER = buildSlotOrder();
-
-function buildSlotOrder() {
-  const total = GRID_COLS * GRID_ROWS;
-  const slots = [];
-  for (let slot = 0; slot < total; slot += 1) {
-    const col = slot % GRID_COLS;
-    const row = Math.floor(slot / GRID_COLS);
-    const dx = col - (GRID_COLS - 1) / 2;
-    const dy = row - (GRID_ROWS - 1) / 2;
-    const jitter = ((slot * 2654435761) % 1000) / 1000;
-    slots.push({ slot, weight: Math.sqrt(dx * dx + dy * dy) + jitter * 0.9 });
-  }
-  slots.sort((a, b) => a.weight - b.weight);
-  return slots.map((item) => item.slot);
-}
-
-function nextSlot(index) {
-  return SLOT_ORDER[index % SLOT_ORDER.length];
+  return { buildings: buildings.slice(), pending: null, dirty: true, canvas: null, ctx: null };
 }
 
 // Постройка готовится отдельно от макета: пока играет анимация выезда,
-// её нельзя запекать в offscreen, иначе дом появится дважды.
+// её нельзя запекать в offscreen, иначе дом появится дважды. Но в раскладке
+// она уже учитывается, иначе соседи прыгнут в момент фиксации.
 function prepareBuilding(city, colorIndex, level) {
   const district = Math.floor((level - 1) / DISTRICT_SIZE) % DISTRICT_KINDS.length;
   const pool = DISTRICT_KINDS[district];
   const index = city.buildings.length;
-  const kind = pool[index % pool.length] || KINDS[index % KINDS.length];
-  return { slot: nextSlot(index), color: colorIndex, kind, seed: (index * 2654435761) >>> 0 };
+  const building = { index, color: colorIndex, kind: pool[index % pool.length], seed: (index * 2654435761) >>> 0 };
+  city.pending = building;
+  city.dirty = true;
+  return building;
 }
 
 function commitBuilding(city, building) {
   city.buildings.push(building);
+  city.pending = null;
   city.dirty = true;
 }
 
@@ -1185,28 +1331,66 @@ function trimCity(city, count) {
 
 function resetCity(city) {
   city.buildings.length = 0;
+  city.pending = null;
   city.dirty = true;
 }
 
-function slotPoint(rect, slot) {
-  const col = slot % GRID_COLS;
-  const row = Math.floor(slot / GRID_COLS);
-  const tileW = (rect.width * 0.92) / (GRID_COLS + GRID_ROWS) * 2;
-  const tileH = tileW / 2;
-  // Начало координат сдвинуто так, чтобы центр сетки лёг на центр плиты.
-  const originX = rect.x + rect.width / 2 - ((GRID_COLS - 1) - (GRID_ROWS - 1)) * (tileW / 4);
-  const originY = rect.y + rect.height * 0.60 - ((GRID_COLS - 1) + (GRID_ROWS - 1)) * (tileH / 4);
+function layoutCount(city) {
+  return city.buildings.length + (city.pending ? 1 : 0);
+}
+
+function plate(rect, count) {
+  const grown = 1 + PLATE_GROWTH * Math.min(count, PLATE_GROWTH_LIMIT);
+  // Площадка не должна упираться в края экрана — иначе овал срезается.
+  const rx = Math.min(rect.width * PLATE_BASE_SHARE * grown, rect.width * PLATE_MAX_SHARE) / 2;
   return {
-    x: originX + (col - row) * (tileW / 2),
-    y: originY + (col + row) * (tileH / 2),
-    scale: tileW / 2
+    x: rect.x + rect.width / 2,
+    y: rect.y + rect.height * PLATE_CENTER_Y,
+    rx,
+    ry: rx * PLATE_ASPECT
   };
 }
 
-function depth(building) {
-  const col = building.slot % GRID_COLS;
-  const row = Math.floor(building.slot / GRID_COLS);
-  return col + row;
+// Квадратная спираль от центра: город растёт пятном, а не рядами.
+function spiralCell(index) {
+  if (index === 0) return { gx: 0, gy: 0 };
+  let ring = 1;
+  let start = 1;
+  while (start + 8 * ring <= index) {
+    start += 8 * ring;
+    ring += 1;
+  }
+  const offset = index - start;
+  const side = Math.floor(offset / (2 * ring));
+  const step = offset % (2 * ring);
+  if (side === 0) return { gx: ring, gy: -ring + step };
+  if (side === 1) return { gx: ring - step, gy: ring };
+  if (side === 2) return { gx: -ring, gy: ring - step };
+  return { gx: -ring + step, gy: -ring };
+}
+
+function ringsFor(count) {
+  return Math.max(MIN_RINGS, Math.ceil((Math.sqrt(Math.max(1, count)) - 1) / 2));
+}
+
+// Детерминированный разброс: город не решётка и не случайная куча.
+function jitterOf(seed) {
+  const a = ((seed >>> 3) % 1000) / 1000 - 0.5;
+  const b = ((seed >>> 13) % 1000) / 1000 - 0.5;
+  return { jx: a * 2 * JITTER, jy: b * 2 * JITTER };
+}
+
+function buildingPoint(rect, count, building) {
+  const disc = plate(rect, count);
+  const tileW = (disc.rx * TILE_OF_PLATE) / (ringsFor(count) + 0.5);
+  const tileH = tileW * PLATE_ASPECT;
+  const cell = spiralCell(building.index);
+  const shift = jitterOf(building.seed);
+  return {
+    x: disc.x + (cell.gx - cell.gy) * (tileW / 2) + shift.jx * tileW,
+    y: disc.y + (cell.gx + cell.gy) * (tileH / 2) + shift.jy * tileH,
+    scale: tileW * BUILD_SCALE
+  };
 }
 
 // Отдельный offscreen: макет перерисовывается при изменении, а не каждый кадр.
@@ -1224,27 +1408,148 @@ function getCityCanvas(city, rect) {
     city.dirty = true;
   }
   if (city.dirty) {
-    city.ctx.clearRect(0, 0, w, h);
     const local = { x: 0, y: 0, width: w, height: h };
-    const sorted = city.buildings.slice().sort((a, b) => depth(a) - depth(b));
-    for (let i = 0; i < sorted.length; i += 1) {
-      drawBuilding(city.ctx, local, sorted[i], 1);
+    city.ctx.clearRect(0, 0, w, h);
+    drawPlot(city.ctx, local, city);
+    const count = layoutCount(city);
+    const placed = city.buildings.map((building) => ({
+      building,
+      point: buildingPoint(local, count, building)
+    }));
+    // Ближние к зрителю рисуются позже.
+    placed.sort((a, b) => a.point.y - b.point.y);
+    for (let i = 0; i < placed.length; i += 1) {
+      paintBuilding(city.ctx, placed[i].building, placed[i].point, 1);
     }
     city.dirty = false;
   }
   return city.canvas;
 }
 
-function drawBuilding(ctx, rect, building, appear = 1) {
-  const point = slotPoint(rect, building.slot);
-  const scale = point.scale;
-  const rise = (1 - appear) * scale * 2.2;
-  const x = point.x;
-  const y = point.y + rise;
+// Постройка в момент появления: рисуется поверх запечённого макета.
+function drawBuilding(ctx, rect, city, building, appear) {
+  const point = buildingPoint(rect, layoutCount(city), building);
   ctx.save();
   ctx.beginPath();
   ctx.rect(rect.x, rect.y, rect.width, rect.height);
   ctx.clip();
+  paintBuilding(ctx, building, point, appear);
+  ctx.restore();
+}
+
+// --- участок --------------------------------------------------------------
+
+// До первой постройки участок уже обжитой: дорога, ограда, деревья, колодец.
+// Пустой овал читался бы как ошибка загрузки, а не как награда.
+function drawPlot(ctx, rect, city) {
+  const disc = plate(rect, layoutCount(city));
+  ctx.fillStyle = 'rgba(154, 123, 82, 0.12)';
+  ctx.beginPath();
+  ctx.ellipse(disc.x, disc.y + disc.ry * 0.06, disc.rx * 1.02, disc.ry * 1.02, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = shade(TABLE, 0.34);
+  ctx.beginPath();
+  ctx.ellipse(disc.x, disc.y, disc.rx, disc.ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawRoad(ctx, disc);
+  drawFence(ctx, disc);
+
+  const props = [
+    { kind: 'tree', point: propPoint(disc, -0.66, 0.3, 0.34) },
+    { kind: 'tree', point: propPoint(disc, 0.7, -0.06, 0.3) },
+    { kind: 'well', point: propPoint(disc, -0.2, 0.62, 0.32) }
+  ];
+  props.sort((a, b) => a.point.y - b.point.y);
+  for (let i = 0; i < props.length; i += 1) {
+    if (props[i].kind === 'tree') tree(ctx, props[i].point.x, props[i].point.y, props[i].point.scale, i);
+    else well(ctx, props[i].point.x, props[i].point.y, props[i].point.scale);
+  }
+}
+
+function propPoint(disc, ux, uy, scale) {
+  return { x: disc.x + disc.rx * ux, y: disc.y + disc.ry * uy, scale: disc.rx * scale };
+}
+
+function drawRoad(ctx, disc) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(disc.x, disc.y, disc.rx, disc.ry, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = 'rgba(154, 123, 82, 0.22)';
+  ctx.beginPath();
+  ctx.moveTo(disc.x - disc.rx, disc.y + disc.ry * 0.22);
+  ctx.lineTo(disc.x + disc.rx, disc.y - disc.ry * 0.52);
+  ctx.lineTo(disc.x + disc.rx, disc.y - disc.ry * 0.12);
+  ctx.lineTo(disc.x - disc.rx, disc.y + disc.ry * 0.62);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawFence(ctx, disc) {
+  const posts = 9;
+  ctx.strokeStyle = shade(WOOD, -0.08);
+  ctx.lineWidth = Math.max(1.2, disc.rx * 0.012);
+  const points = [];
+  for (let i = 0; i < posts; i += 1) {
+    const angle = Math.PI * (1.12 + (i / (posts - 1)) * 0.76);
+    points.push({ x: disc.x + Math.cos(angle) * disc.rx * 0.92, y: disc.y + Math.sin(angle) * disc.ry * 0.92 });
+  }
+  const height = disc.ry * 0.24;
+  for (let rail = 0; rail < 2; rail += 1) {
+    ctx.beginPath();
+    const lift = height * (rail === 0 ? 0.75 : 0.35);
+    for (let i = 0; i < points.length; i += 1) {
+      const px = points[i].x;
+      const py = points[i].y - lift;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+  for (let i = 0; i < points.length; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(points[i].x, points[i].y);
+    ctx.lineTo(points[i].x, points[i].y - height);
+    ctx.stroke();
+  }
+}
+
+function well(ctx, x, y, scale) {
+  groundShadow(ctx, x, y, scale * 0.42);
+  ctx.fillStyle = shade(WOOD, -0.35);
+  ctx.beginPath();
+  ctx.ellipse(x, y - scale * 0.1, scale * 0.34, scale * 0.17, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = shade(WOOD, 0.05);
+  ctx.beginPath();
+  ctx.ellipse(x, y - scale * 0.2, scale * 0.34, scale * 0.17, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = shade(WOOD, -0.3);
+  ctx.lineWidth = Math.max(1.2, scale * 0.08);
+  ctx.beginPath();
+  ctx.moveTo(x - scale * 0.26, y - scale * 0.24);
+  ctx.lineTo(x - scale * 0.26, y - scale * 0.62);
+  ctx.moveTo(x + scale * 0.26, y - scale * 0.24);
+  ctx.lineTo(x + scale * 0.26, y - scale * 0.62);
+  ctx.stroke();
+  ctx.fillStyle = shade(WOOD, -0.18);
+  ctx.beginPath();
+  ctx.moveTo(x - scale * 0.42, y - scale * 0.6);
+  ctx.lineTo(x, y - scale * 0.86);
+  ctx.lineTo(x + scale * 0.42, y - scale * 0.6);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// --- постройки ------------------------------------------------------------
+
+function paintBuilding(ctx, building, point, appear) {
+  const scale = point.scale;
+  const rise = (1 - appear) * scale * 2.2;
+  const x = point.x;
+  const y = point.y + rise;
   const color = PALETTE[building.color % PALETTE.length];
   switch (building.kind) {
     case 'tower':
@@ -1252,10 +1557,10 @@ function drawBuilding(ctx, rect, building, appear = 1) {
       windows(ctx, x, y, scale * 0.52, scale * 1.75, color, 3);
       break;
     case 'park':
-      tree(ctx, x, y, scale * 0.9, color);
+      tree(ctx, x, y, scale * 0.68, building.color);
       break;
     case 'lamp':
-      lamp(ctx, x, y, scale * 0.9);
+      lamp(ctx, x, y, scale * 0.8);
       break;
     case 'bridge':
       bridge(ctx, x, y, scale, color);
@@ -1269,7 +1574,6 @@ function drawBuilding(ctx, rect, building, appear = 1) {
       break;
     }
   }
-  ctx.restore();
 }
 
 function groundShadow(ctx, x, y, w) {
@@ -1370,11 +1674,11 @@ function windows(ctx, x, y, w, h, color, rows) {
   }
 }
 
-function tree(ctx, x, y, scale, color) {
+function tree(ctx, x, y, scale, variant) {
   groundShadow(ctx, x, y, scale * 0.5);
   ctx.fillStyle = WOOD;
   ctx.fillRect(x - scale * 0.07, y - scale * 0.55, scale * 0.14, scale * 0.55);
-  const crown = color % 2 === 0 ? '#5B9750' : '#4C8547';
+  const crown = variant % 2 === 0 ? '#5B9750' : '#4C8547';
   ctx.fillStyle = shade(crown, -0.08);
   ctx.beginPath();
   ctx.ellipse(x, y - scale * 0.74, scale * 0.34, scale * 0.4, 0, 0, Math.PI * 2);
@@ -1421,7 +1725,7 @@ function bridge(ctx, x, y, scale, color) {
   }
 }
 
-return { createCity, nextSlot, prepareBuilding, commitBuilding, trimCity, resetCity, getCityCanvas, drawBuilding };
+return { createCity, prepareBuilding, commitBuilding, trimCity, resetCity, getCityCanvas, drawBuilding };
 })();
 const __src_anim_tween_js = (() => {
 // Твин-движок. Объекты переиспользуются из пула: в цикле отрисовки
@@ -1603,7 +1907,7 @@ const __src_render_scene_js = (() => {
 // Отрисовка кадра целиком. Модуль только читает view — состояние
 // игры он не меняет.
 
-const { drawCube, drawPost, drawShadowEllipse, SKY_TOP, TABLE, INK, shade } = __src_render_iso_js;
+const { drawCube, drawPost, drawHole, drawPegCap, drawShadowEllipse, SKY_TOP, TABLE, INK, shade } = __src_render_iso_js;
 const { getCityCanvas } = __src_render_city_js;
 const { slotPosition } = __src_render_layout_js;
 const { drawParticles } = __src_anim_fx_js;
@@ -1643,33 +1947,11 @@ function drawBackground(ctx, layout) {
 
 function drawCity(ctx, view) {
   const rect = view.layout.city;
-  drawTablePlate(ctx, rect);
   const canvas = getCityCanvas(view.city, rect);
   ctx.drawImage(canvas, rect.x, rect.y);
   if (view.cityAppear) {
     view.cityAppear.draw(ctx, rect);
   }
-  // Линия стола под макетом: отделяет «сцену» от поля.
-  ctx.strokeStyle = 'rgba(92, 70, 44, 0.14)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, rect.height);
-  ctx.lineTo(view.layout.width, rect.height);
-  ctx.stroke();
-}
-
-// Плита стола: макет должен стоять на поверхности, а не висеть в воздухе.
-function drawTablePlate(ctx, rect) {
-  const cx = rect.x + rect.width / 2;
-  const cy = rect.y + rect.height * 0.62;
-  ctx.fillStyle = 'rgba(154, 123, 82, 0.10)';
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rect.width * 0.46, rect.height * 0.34, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
-  ctx.beginPath();
-  ctx.ellipse(cx, cy - rect.height * 0.02, rect.width * 0.44, rect.height * 0.31, 0, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 function postOffset(view, index) {
@@ -1683,7 +1965,7 @@ function drawPosts(ctx, view) {
     const dx = postOffset(view, i);
     const post = layout.posts[i];
     ctx.translate(dx, 0);
-    drawPost(ctx, post.x, post.baseY, layout.stackHeight + layout.size * 0.35, layout.size);
+    drawPost(ctx, post.x, post.baseY, layout.pegHeight, layout.size);
     if (view.hint && (view.hint.from === i || view.hint.to === i)) {
       drawHintMark(ctx, layout, post, view.hintPulse, view.hint.from === i);
     }
@@ -1697,6 +1979,12 @@ function drawPosts(ctx, view) {
       const wave = waveOffset(view, i, slot, layout.size);
       const squash = landingSquash(view, i, slot);
       drawCube(ctx, pos.x, pos.y - wave, layout.size, posts[i][slot], squash);
+    }
+    if (visible > 0) {
+      const top = slotPosition(layout, i, visible - 1);
+      const topY = top.y - waveOffset(view, i, visible - 1, layout.size);
+      drawHole(ctx, top.x, topY, layout.size, posts[i][visible - 1]);
+      drawPegCap(ctx, post.x, topY, post.baseY - layout.pegHeight, layout.size);
     }
     ctx.translate(-dx, 0);
   }
@@ -1729,7 +2017,7 @@ function drawHintMark(ctx, layout, post, pulse, isSource) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const top = post.baseY - layout.stackHeight - size * 0.55;
+  const top = post.baseY - layout.pegHeight - size * 0.75;
   const bob = pulse * size * 0.18;
   const w = size * 0.42;
   ctx.fillStyle = INK;
@@ -1755,10 +2043,13 @@ function drawHand(ctx, view) {
   const post = layout.posts[hand.from];
   const baseSlot = view.posts[hand.from].length - hand.count;
   const lift = hand.lift * (layout.size * 1.5);
+  let topY = 0;
   for (let i = 0; i < hand.count; i += 1) {
     const pos = slotPosition(layout, hand.from, baseSlot + i);
-    drawCube(ctx, post.x + hand.bob, pos.y - lift, layout.size, hand.color, 1);
+    topY = pos.y - lift;
+    drawCube(ctx, post.x + hand.bob, topY, layout.size, hand.color, 1);
   }
+  drawHole(ctx, post.x + hand.bob, topY, layout.size, hand.color);
 }
 
 function drawFlight(ctx, view) {
@@ -1768,6 +2059,7 @@ function drawFlight(ctx, view) {
   for (let i = 0; i < flight.count; i += 1) {
     drawCube(ctx, flight.x, flight.y - i * layout.step, layout.size, flight.color, 1);
   }
+  drawHole(ctx, flight.x, flight.y - (flight.count - 1) * layout.step, layout.size, flight.color);
   drawShadowEllipse(ctx, flight.x, flight.groundY, layout.size * 0.9, layout.size * 0.4, 0.35);
 }
 
@@ -1916,7 +2208,6 @@ function createHud(handlers) {
     undo: document.getElementById('btn-undo'),
     hint: document.getElementById('btn-hint'),
     post: document.getElementById('btn-post'),
-    restart: document.getElementById('btn-restart'),
     settings: document.getElementById('btn-settings'),
     menu: document.getElementById('btn-menu')
   };
@@ -1943,6 +2234,8 @@ function createHud(handlers) {
       setBadge(hintBadge, Math.max(0, FREE_HINTS - status.hintsUsed));
       postBadge.textContent = status.extraPostUsed ? '▶' : '1';
       postBadge.classList.toggle('reward', status.extraPostUsed);
+      // Отменять нечего — кнопка выключена. А вот «дальше за рекламу» —
+      // это рабочее состояние, и выключенной кнопка выглядеть не должна.
       buttons.undo.disabled = !status.canUndo;
       buttons.post.disabled = status.extraPostUsed;
     }
@@ -1978,6 +2271,7 @@ function createScreens(handlers) {
   const soundState = document.getElementById('sound-state');
   const vibroState = document.getElementById('vibro-state');
   const toast = document.getElementById('toast');
+  const restartButton = document.getElementById('btn-restart');
   let toastTimer = 0;
 
   document.getElementById('btn-play').addEventListener('click', handlers.play);
@@ -1987,6 +2281,7 @@ function createScreens(handlers) {
   document.getElementById('btn-sound').addEventListener('click', handlers.toggleSound);
   document.getElementById('btn-vibro').addEventListener('click', handlers.toggleVibro);
   document.getElementById('btn-reset').addEventListener('click', handlers.resetProgress);
+  document.getElementById('btn-restart').addEventListener('click', handlers.restart);
 
   function hideAll() {
     Object.keys(nodes).forEach((key) => nodes[key].classList.add('hidden'));
@@ -2015,9 +2310,11 @@ function createScreens(handlers) {
       winCity.textContent = `Домов в городе: ${cityCount}`;
       nodes.win.classList.remove('hidden');
     },
-    showSettings(settings) {
+    showSettings(settings, inGame) {
       soundState.textContent = settings.muted ? 'выкл' : 'вкл';
       vibroState.textContent = settings.vibro ? 'вкл' : 'выкл';
+      // «Заново» нужен только внутри уровня.
+      restartButton.classList.toggle('hidden', !inGame);
       nodes.settings.classList.remove('hidden');
     },
     hideSettings() {
@@ -2037,6 +2334,117 @@ function createScreens(handlers) {
 }
 
 return { createScreens };
+})();
+const __src_ui_debug_js = (() => {
+// Оверлей отладки: включается тройным тапом по номеру уровня.
+// Нужен, чтобы настраивать композицию с телефона, где нет консоли.
+// Весь код держится в этом файле — вырезается одной строкой в main.js.
+
+const TAP_WINDOW_MS = 700;
+const TAPS_TO_TOGGLE = 3;
+const FPS_SMOOTHING = 0.9;
+
+function createDebug() {
+  let root = null;
+  let panel = null;
+  let cityFrame = null;
+  let fieldFrame = null;
+  let visible = false;
+  let fps = 0;
+  let last = 0;
+  let taps = 0;
+  let firstTap = 0;
+
+  const trigger = document.getElementById('level-number');
+  if (trigger) {
+    trigger.style.pointerEvents = 'auto';
+    trigger.addEventListener('pointerdown', () => {
+      const now = Date.now();
+      if (now - firstTap > TAP_WINDOW_MS) {
+        firstTap = now;
+        taps = 0;
+      }
+      taps += 1;
+      if (taps >= TAPS_TO_TOGGLE) {
+        taps = 0;
+        toggle();
+      }
+    });
+  }
+
+  function build() {
+    root = document.createElement('div');
+    root.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9';
+    cityFrame = frame('rgba(59, 113, 164, 0.85)', 'город');
+    fieldFrame = frame('rgba(212, 85, 63, 0.85)', 'поле');
+    panel = document.createElement('div');
+    panel.style.cssText = [
+      'position:absolute',
+      'left:8px',
+      'top:64px',
+      'padding:6px 8px',
+      'border-radius:8px',
+      'background:rgba(46, 42, 36, 0.82)',
+      'color:#FBF6EC',
+      'font:600 11px/1.5 ui-monospace, monospace',
+      'white-space:pre'
+    ].join(';');
+    root.appendChild(cityFrame.box);
+    root.appendChild(fieldFrame.box);
+    root.appendChild(panel);
+    document.body.appendChild(root);
+  }
+
+  function frame(color, title) {
+    const box = document.createElement('div');
+    box.style.cssText = `position:absolute;border:1px dashed ${color};background:${color.replace('0.85', '0.08')}`;
+    const label = document.createElement('span');
+    label.textContent = title;
+    label.style.cssText = `position:absolute;right:2px;top:1px;font:600 9px/1 ui-monospace, monospace;color:${color}`;
+    box.appendChild(label);
+    return { box, label };
+  }
+
+  function place(target, rect) {
+    target.box.style.left = `${rect.x}px`;
+    target.box.style.top = `${rect.y}px`;
+    target.box.style.width = `${rect.width}px`;
+    target.box.style.height = `${rect.height}px`;
+  }
+
+  function toggle() {
+    if (!root) build();
+    visible = !visible;
+    root.style.display = visible ? 'block' : 'none';
+  }
+
+  return {
+    isVisible() {
+      return visible;
+    },
+    toggle,
+    update(info) {
+      const now = info.time;
+      if (last > 0) {
+        const instant = 1000 / Math.max(1, now - last);
+        fps = fps === 0 ? instant : fps * FPS_SMOOTHING + instant * (1 - FPS_SMOOTHING);
+      }
+      last = now;
+      if (!visible || !info.layout) return;
+      place(cityFrame, info.layout.city);
+      place(fieldFrame, info.layout.field);
+      panel.textContent = [
+        `fps ${fps.toFixed(0)}`,
+        `экран ${Math.round(info.layout.width)}×${Math.round(info.layout.height)} dpr ${info.dpr}`,
+        `кубик ${info.layout.cubeWidth.toFixed(1)} px, шаг ${info.layout.spacing.toFixed(1)}`,
+        `столбиков ${info.layout.posts.length} в ${info.layout.rows} ряд(а)`,
+        `уровень ${info.level}, par ${info.par}, ходов ${info.moves}`
+      ].join('\n');
+    }
+  };
+}
+
+return { createDebug };
 })();
 const __src_platform_none_js = (() => {
 // Заглушка для локальной разработки: сохранения в localStorage,
@@ -2363,7 +2771,7 @@ const { LEVELS } = __levels_levels_js;
 const { createState } = __src_game_state_js;
 const { takeTopGroup, canMove, applyMove, isSolved, isPostComplete, stars } = __src_game_rules_js;
 const { generateLevel } = __src_game_generator_js;
-const { findHint, solve } = __src_game_solver_js;
+const { findHint, findOptimal } = __src_game_solver_js;
 const { createHistory, pushHistory, popHistory, canUndo, clearHistory } = __src_game_history_js;
 const { computeLayout, hitTest, slotPosition } = __src_render_layout_js;
 const { drawScene } = __src_render_scene_js;
@@ -2373,6 +2781,7 @@ const { createFx, updateFx, spawnSplinters, shakeCamera } = __src_anim_fx_js;
 const sfx = __src_audio_sfx_js;
 const { createHud, FREE_UNDO, FREE_HINTS } = __src_ui_hud_js;
 const { createScreens } = __src_ui_screens_js;
+const { createDebug } = __src_ui_debug_js;
 const platform = __src_platform_sdk_js;
 
 const LIFT_MS = 120;
@@ -2397,7 +2806,11 @@ const VIBRO_COMPLETE = 30;
 const PENDING_LIMIT = 2;
 const MAX_DELTA = 50;
 const MAX_DPR = 2;
-const LOOSE_LEVEL_NODES = 60000;
+const LOOSE_LEVEL_NODES = 25000;
+const PAR_MAX_DEPTH = 20;
+const INEXACT_PAR_FACTOR = 0.8;
+const LEVEL_SEED_BASE = 7919;
+const LEVEL_SEED_OFFSET = 13;
 
 const canvas = document.getElementById('scene');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -2444,27 +2857,32 @@ const hud = createHud({
   undo: () => requestUndo(),
   hint: () => requestHint(),
   post: () => requestExtraPost(),
-  restart: () => restartLevel(),
-  settings: () => screens.showSettings(app.settings),
+  settings: () => screens.showSettings(app.settings, app.screen === 'game'),
   menu: () => openMenu()
 });
+
+const debug = createDebug();
 
 const screens = createScreens({
   play: () => startGame(),
   next: () => nextLevel(),
-  openSettings: () => screens.showSettings(app.settings),
+  openSettings: () => screens.showSettings(app.settings, app.screen === 'game'),
   closeSettings: () => {
     screens.hideSettings();
     persist();
   },
+  restart: () => {
+    screens.hideSettings();
+    restartLevel();
+  },
   toggleSound: () => {
     app.settings.muted = !app.settings.muted;
     sfx.setMuted(app.settings.muted);
-    screens.showSettings(app.settings);
+    screens.showSettings(app.settings, app.screen === 'game');
   },
   toggleVibro: () => {
     app.settings.vibro = !app.settings.vibro;
-    screens.showSettings(app.settings);
+    screens.showSettings(app.settings, app.screen === 'game');
   },
   resetProgress: () => {
     app.progress.level = 1;
@@ -2505,16 +2923,18 @@ function rebuildLayout(width, height) {
   app.city.dirty = true;
 }
 
+// Уровни после 60-го считаются на лету — один раз при старте уровня,
+// а не на каждый ход. par считается так же, как в офлайн-генераторе.
 function levelData(id) {
   if (id <= LEVELS.length) return LEVELS[id - 1];
-  const level = generateLevel(id, (id * 7919 + 13) >>> 0);
-  const solution = solve(level.posts, level.capacity, LOOSE_LEVEL_NODES);
+  const level = generateLevel(id, (id * LEVEL_SEED_BASE + LEVEL_SEED_OFFSET) >>> 0);
+  const optimal = findOptimal(level.posts, level.capacity, PAR_MAX_DEPTH, LOOSE_LEVEL_NODES);
   return {
     id,
     capacity: level.capacity,
     colors: level.colors,
     posts: level.posts,
-    parMoves: solution ? Math.min(solution.length, level.parMoves) : level.parMoves
+    parMoves: optimal === null ? Math.max(1, Math.round(level.parMoves * INEXACT_PAR_FACTOR)) : optimal
   };
 }
 
@@ -2745,7 +3165,7 @@ function completePost(index, color) {
   app.cityAppear = {
     t: 0,
     draw(target, rect) {
-      drawBuilding(target, rect, building, this.t);
+      drawBuilding(target, rect, app.city, building, this.t);
     }
   };
   addTween(app.tweens, {
@@ -2917,6 +3337,14 @@ function frame(now) {
     app.hintPulse = 0.5 + 0.5 * Math.sin((now / 700) * Math.PI * 2);
   }
   render();
+  debug.update({
+    time: now,
+    dpr: app.dpr,
+    layout: app.layout,
+    level: app.level,
+    par: app.state ? app.state.parMoves : 0,
+    moves: app.state ? app.state.moves : 0
+  });
   requestAnimationFrame(frame);
 }
 

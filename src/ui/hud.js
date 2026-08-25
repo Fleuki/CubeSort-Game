@@ -14,7 +14,6 @@ export function createHud(handlers) {
     undo: document.getElementById('btn-undo'),
     hint: document.getElementById('btn-hint'),
     post: document.getElementById('btn-post'),
-    restart: document.getElementById('btn-restart'),
     settings: document.getElementById('btn-settings'),
     menu: document.getElementById('btn-menu')
   };
@@ -41,6 +40,8 @@ export function createHud(handlers) {
       setBadge(hintBadge, Math.max(0, FREE_HINTS - status.hintsUsed));
       postBadge.textContent = status.extraPostUsed ? '▶' : '1';
       postBadge.classList.toggle('reward', status.extraPostUsed);
+      // Отменять нечего — кнопка выключена. А вот «дальше за рекламу» —
+      // это рабочее состояние, и выключенной кнопка выглядеть не должна.
       buttons.undo.disabled = !status.canUndo;
       buttons.post.disabled = status.extraPostUsed;
     }

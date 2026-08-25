@@ -1,50 +1,70 @@
 // Расчёт позиций под размер экрана. Ничего не рисует — только числа.
 
-import { cubeSideHeight } from './iso.js';
+import { cubeSideHeight, PEG_OVERHANG, BASE_RADIUS_RATIO } from './iso.js';
 
-const CITY_SHARE = 0.42;
-const HUD_TOP = 64;
-const HUD_BOTTOM = 96;
-const MIN_CUBE = 13;
-const MAX_CUBE = 46;
-const GAP_RATIO = 0.55;
+// Доли доступной высоты (без полос HUD). Поле — герой экрана,
+// поэтому ему отдано больше половины.
+const CITY_SHARE = 0.32;
+const AIR_SHARE = 0.06;
+const FIELD_SHARE = 0.62;
+
+const HUD_TOP = 56;
+const HUD_BOTTOM = 78;
+const SIDE_MARGIN = 12;
+const MIN_SIDE_MARGIN = 4;
+const MIN_BASE_GAP = 8;
+const MIN_CUBE_WIDTH = 40;
+const MAX_CUBE_WIDTH = 104;
+const STEP_SLACK = 0.5;
+const CUBE_OF_STEP = 0.82;
+const FIELD_USABLE = 0.8;
+const STACK_ALLOWANCE = 1.6;
+const ROW_GAP_SHARE = 0.05;
+const SINGLE_ROW_LIMIT = 5;
 const HIT_PADDING = 0.2;
-const SIDE_MARGIN = 10;
+
+// Вертикальный шаг стопки в долях ширины кубика: кубик рисуется
+// в изометрии 2:1, поэтому по высоте он занимает меньше, чем по ширине.
+const VERTICAL_UNIT = cubeSideHeight(0.5);
 
 export function computeLayout(width, height, postCount, capacity) {
-  const cityHeight = Math.round(height * CITY_SHARE);
-  const fieldTop = cityHeight + HUD_TOP * 0.2;
-  const fieldBottom = height - HUD_BOTTOM;
-  const fieldHeight = Math.max(120, fieldBottom - fieldTop);
+  const available = Math.max(200, height - HUD_TOP - HUD_BOTTOM);
+  const cityHeight = available * CITY_SHARE;
+  const fieldHeight = available * FIELD_SHARE;
+  const fieldTop = HUD_TOP + cityHeight + available * AIR_SHARE;
 
-  const rows = postCount > 5 ? 2 : 1;
+  const rows = postCount > SINGLE_ROW_LIMIT ? 2 : 1;
   const perRow = Math.ceil(postCount / rows);
+  const rowGap = rows > 1 ? fieldHeight * ROW_GAP_SHARE : 0;
+  const rowHeight = (fieldHeight - rowGap * (rows - 1)) / rows;
 
-  // Размер кубика зажат и по ширине ряда, и по высоте столбика.
-  const byWidth = (width - SIDE_MARGIN * 2) / (perRow * (2 + GAP_RATIO));
-  const byHeight = (fieldHeight / rows) / (capacity * 0.95 + 2.1);
-  const size = Math.max(MIN_CUBE, Math.min(MAX_CUBE, Math.min(byWidth, byHeight)));
-
+  const cubeWidth = fitCubeWidth(width, perRow, rowHeight, capacity);
+  const size = cubeWidth / 2;
   const step = cubeSideHeight(size);
   const stackHeight = capacity * step + size * 0.5;
-  const rowBlock = stackHeight + size * 1.3;
-  const rowGap = rows > 1 ? size * 0.7 : 0;
-  const total = rows * rowBlock + (rows - 1) * rowGap;
-  // Ряды столбиков центрируются в поле, иначе снизу остаётся дыра.
-  const startY = fieldTop + Math.max(0, (fieldHeight - total) / 2);
+  // Штырь торчит над верхней гранью полной стопки ровно на PEG_OVERHANG
+  // высоты кубика — поэтому в высоту входит и половина верхнего ромба.
+  const pegHeight = (capacity + PEG_OVERHANG) * step + size * 0.25;
+  // Ряды стоят единым блоком по центру поля: при вместимости 3 стопки
+  // низкие, и прижимать их к краю — значит рвать экран пополам.
+  const baseRadiusY = size * BASE_RADIUS_RATIO * 0.5;
+  const blockHeight = pegHeight + baseRadiusY * 2;
+  const groupHeight = rows * blockHeight + (rows - 1) * rowGap;
+  const groupTop = fieldTop + Math.max(0, (fieldHeight - groupHeight) / 2);
 
+  const spacing = stepFor(width, perRow, cubeWidth);
   const posts = [];
   for (let i = 0; i < postCount; i += 1) {
     const row = Math.floor(i / perRow);
     const inRow = i - row * perRow;
     const count = Math.min(perRow, postCount - row * perRow);
-    const spacing = size * (2 + GAP_RATIO);
+    const rowTop = groupTop + row * (blockHeight + rowGap);
     const rowWidth = count * spacing;
     const startX = (width - rowWidth) / 2 + spacing / 2;
     posts.push({
       index: i,
       x: startX + inRow * spacing,
-      baseY: startY + rowBlock * (row + 1) + rowGap * row,
+      baseY: rowTop + pegHeight,
       row
     });
   }
@@ -52,13 +72,38 @@ export function computeLayout(width, height, postCount, capacity) {
   return {
     width,
     height,
-    city: { x: 0, y: 0, width, height: cityHeight },
+    city: { x: 0, y: HUD_TOP, width, height: cityHeight },
+    field: { x: 0, y: fieldTop, width, height: fieldHeight },
     posts,
+    rows,
     size,
+    cubeWidth,
     step,
     stackHeight,
+    pegHeight,
+    spacing,
     capacity
   };
+}
+
+function stepFor(width, perRow, cubeWidth) {
+  // Если кубик упёрся в нижнюю границу, поле раздвигается за счёт полей
+  // по краям, а не за счёт размера кубика.
+  const wide = (width - SIDE_MARGIN * 2) / (perRow + STEP_SLACK);
+  const needed = cubeWidth / CUBE_OF_STEP;
+  if (needed <= wide) return wide;
+  const tight = (width - MIN_SIDE_MARGIN * 2) / (perRow + STEP_SLACK);
+  return Math.min(needed, tight);
+}
+
+function fitCubeWidth(width, perRow, rowHeight, capacity) {
+  const step = (width - SIDE_MARGIN * 2) / (perRow + STEP_SLACK);
+  const byWidth = step * CUBE_OF_STEP;
+  const byHeight = (rowHeight * FIELD_USABLE) / ((capacity + STACK_ALLOWANCE) * VERTICAL_UNIT);
+  // Подставки не должны слипаться: между соседними — минимум MIN_BASE_GAP.
+  const byGap = (step - MIN_BASE_GAP) / BASE_RADIUS_RATIO;
+  const fitted = Math.min(byWidth, byHeight, byGap);
+  return Math.max(MIN_CUBE_WIDTH, Math.min(MAX_CUBE_WIDTH, fitted));
 }
 
 // Хитбокс шире визуального штыря на 20% с каждой стороны — пальцу нужен запас.
@@ -66,7 +111,7 @@ export function hitTest(layout, px, py) {
   const half = layout.size * (1 + HIT_PADDING);
   for (let i = 0; i < layout.posts.length; i += 1) {
     const post = layout.posts[i];
-    const top = post.baseY - layout.stackHeight - layout.size;
+    const top = post.baseY - layout.pegHeight - layout.size * 0.5;
     const bottom = post.baseY + layout.size * 0.7;
     if (px >= post.x - half && px <= post.x + half && py >= top && py <= bottom) return i;
   }

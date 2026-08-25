@@ -5,7 +5,7 @@ import { LEVELS } from '../levels/levels.js';
 import { createState } from './game/state.js';
 import { takeTopGroup, canMove, applyMove, isSolved, isPostComplete, stars } from './game/rules.js';
 import { generateLevel } from './game/generator.js';
-import { findHint, solve } from './game/solver.js';
+import { findHint, findOptimal } from './game/solver.js';
 import { createHistory, pushHistory, popHistory, canUndo, clearHistory } from './game/history.js';
 import { computeLayout, hitTest, slotPosition } from './render/layout.js';
 import { drawScene } from './render/scene.js';
@@ -15,6 +15,7 @@ import { createFx, updateFx, spawnSplinters, shakeCamera } from './anim/fx.js';
 import * as sfx from './audio/sfx.js';
 import { createHud, FREE_UNDO, FREE_HINTS } from './ui/hud.js';
 import { createScreens } from './ui/screens.js';
+import { createDebug } from './ui/debug.js';
 import * as platform from './platform/sdk.js';
 
 const LIFT_MS = 120;
@@ -39,7 +40,11 @@ const VIBRO_COMPLETE = 30;
 const PENDING_LIMIT = 2;
 const MAX_DELTA = 50;
 const MAX_DPR = 2;
-const LOOSE_LEVEL_NODES = 60000;
+const LOOSE_LEVEL_NODES = 25000;
+const PAR_MAX_DEPTH = 20;
+const INEXACT_PAR_FACTOR = 0.8;
+const LEVEL_SEED_BASE = 7919;
+const LEVEL_SEED_OFFSET = 13;
 
 const canvas = document.getElementById('scene');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -86,27 +91,32 @@ const hud = createHud({
   undo: () => requestUndo(),
   hint: () => requestHint(),
   post: () => requestExtraPost(),
-  restart: () => restartLevel(),
-  settings: () => screens.showSettings(app.settings),
+  settings: () => screens.showSettings(app.settings, app.screen === 'game'),
   menu: () => openMenu()
 });
+
+const debug = createDebug();
 
 const screens = createScreens({
   play: () => startGame(),
   next: () => nextLevel(),
-  openSettings: () => screens.showSettings(app.settings),
+  openSettings: () => screens.showSettings(app.settings, app.screen === 'game'),
   closeSettings: () => {
     screens.hideSettings();
     persist();
   },
+  restart: () => {
+    screens.hideSettings();
+    restartLevel();
+  },
   toggleSound: () => {
     app.settings.muted = !app.settings.muted;
     sfx.setMuted(app.settings.muted);
-    screens.showSettings(app.settings);
+    screens.showSettings(app.settings, app.screen === 'game');
   },
   toggleVibro: () => {
     app.settings.vibro = !app.settings.vibro;
-    screens.showSettings(app.settings);
+    screens.showSettings(app.settings, app.screen === 'game');
   },
   resetProgress: () => {
     app.progress.level = 1;
@@ -147,16 +157,18 @@ function rebuildLayout(width, height) {
   app.city.dirty = true;
 }
 
+// Уровни после 60-го считаются на лету — один раз при старте уровня,
+// а не на каждый ход. par считается так же, как в офлайн-генераторе.
 function levelData(id) {
   if (id <= LEVELS.length) return LEVELS[id - 1];
-  const level = generateLevel(id, (id * 7919 + 13) >>> 0);
-  const solution = solve(level.posts, level.capacity, LOOSE_LEVEL_NODES);
+  const level = generateLevel(id, (id * LEVEL_SEED_BASE + LEVEL_SEED_OFFSET) >>> 0);
+  const optimal = findOptimal(level.posts, level.capacity, PAR_MAX_DEPTH, LOOSE_LEVEL_NODES);
   return {
     id,
     capacity: level.capacity,
     colors: level.colors,
     posts: level.posts,
-    parMoves: solution ? Math.min(solution.length, level.parMoves) : level.parMoves
+    parMoves: optimal === null ? Math.max(1, Math.round(level.parMoves * INEXACT_PAR_FACTOR)) : optimal
   };
 }
 
@@ -387,7 +399,7 @@ function completePost(index, color) {
   app.cityAppear = {
     t: 0,
     draw(target, rect) {
-      drawBuilding(target, rect, building, this.t);
+      drawBuilding(target, rect, app.city, building, this.t);
     }
   };
   addTween(app.tweens, {
@@ -559,6 +571,14 @@ function frame(now) {
     app.hintPulse = 0.5 + 0.5 * Math.sin((now / 700) * Math.PI * 2);
   }
   render();
+  debug.update({
+    time: now,
+    dpr: app.dpr,
+    layout: app.layout,
+    level: app.level,
+    par: app.state ? app.state.parMoves : 0,
+    moves: app.state ? app.state.moves : 0
+  });
   requestAnimationFrame(frame);
 }
 

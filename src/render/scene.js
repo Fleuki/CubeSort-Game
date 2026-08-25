@@ -1,7 +1,7 @@
 // Отрисовка кадра целиком. Модуль только читает view — состояние
 // игры он не меняет.
 
-import { drawCube, drawPost, drawShadowEllipse, SKY_TOP, TABLE, INK, shade } from './iso.js';
+import { drawCube, drawPost, drawHole, drawPegCap, drawShadowEllipse, SKY_TOP, TABLE, INK, shade } from './iso.js';
 import { getCityCanvas } from './city.js';
 import { slotPosition } from './layout.js';
 import { drawParticles } from '../anim/fx.js';
@@ -41,33 +41,11 @@ function drawBackground(ctx, layout) {
 
 function drawCity(ctx, view) {
   const rect = view.layout.city;
-  drawTablePlate(ctx, rect);
   const canvas = getCityCanvas(view.city, rect);
   ctx.drawImage(canvas, rect.x, rect.y);
   if (view.cityAppear) {
     view.cityAppear.draw(ctx, rect);
   }
-  // Линия стола под макетом: отделяет «сцену» от поля.
-  ctx.strokeStyle = 'rgba(92, 70, 44, 0.14)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, rect.height);
-  ctx.lineTo(view.layout.width, rect.height);
-  ctx.stroke();
-}
-
-// Плита стола: макет должен стоять на поверхности, а не висеть в воздухе.
-function drawTablePlate(ctx, rect) {
-  const cx = rect.x + rect.width / 2;
-  const cy = rect.y + rect.height * 0.62;
-  ctx.fillStyle = 'rgba(154, 123, 82, 0.10)';
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rect.width * 0.46, rect.height * 0.34, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
-  ctx.beginPath();
-  ctx.ellipse(cx, cy - rect.height * 0.02, rect.width * 0.44, rect.height * 0.31, 0, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 function postOffset(view, index) {
@@ -81,7 +59,7 @@ function drawPosts(ctx, view) {
     const dx = postOffset(view, i);
     const post = layout.posts[i];
     ctx.translate(dx, 0);
-    drawPost(ctx, post.x, post.baseY, layout.stackHeight + layout.size * 0.35, layout.size);
+    drawPost(ctx, post.x, post.baseY, layout.pegHeight, layout.size);
     if (view.hint && (view.hint.from === i || view.hint.to === i)) {
       drawHintMark(ctx, layout, post, view.hintPulse, view.hint.from === i);
     }
@@ -95,6 +73,12 @@ function drawPosts(ctx, view) {
       const wave = waveOffset(view, i, slot, layout.size);
       const squash = landingSquash(view, i, slot);
       drawCube(ctx, pos.x, pos.y - wave, layout.size, posts[i][slot], squash);
+    }
+    if (visible > 0) {
+      const top = slotPosition(layout, i, visible - 1);
+      const topY = top.y - waveOffset(view, i, visible - 1, layout.size);
+      drawHole(ctx, top.x, topY, layout.size, posts[i][visible - 1]);
+      drawPegCap(ctx, post.x, topY, post.baseY - layout.pegHeight, layout.size);
     }
     ctx.translate(-dx, 0);
   }
@@ -127,7 +111,7 @@ function drawHintMark(ctx, layout, post, pulse, isSource) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const top = post.baseY - layout.stackHeight - size * 0.55;
+  const top = post.baseY - layout.pegHeight - size * 0.75;
   const bob = pulse * size * 0.18;
   const w = size * 0.42;
   ctx.fillStyle = INK;
@@ -153,10 +137,13 @@ function drawHand(ctx, view) {
   const post = layout.posts[hand.from];
   const baseSlot = view.posts[hand.from].length - hand.count;
   const lift = hand.lift * (layout.size * 1.5);
+  let topY = 0;
   for (let i = 0; i < hand.count; i += 1) {
     const pos = slotPosition(layout, hand.from, baseSlot + i);
-    drawCube(ctx, post.x + hand.bob, pos.y - lift, layout.size, hand.color, 1);
+    topY = pos.y - lift;
+    drawCube(ctx, post.x + hand.bob, topY, layout.size, hand.color, 1);
   }
+  drawHole(ctx, post.x + hand.bob, topY, layout.size, hand.color);
 }
 
 function drawFlight(ctx, view) {
@@ -166,5 +153,6 @@ function drawFlight(ctx, view) {
   for (let i = 0; i < flight.count; i += 1) {
     drawCube(ctx, flight.x, flight.y - i * layout.step, layout.size, flight.color, 1);
   }
+  drawHole(ctx, flight.x, flight.y - (flight.count - 1) * layout.step, layout.size, flight.color);
   drawShadowEllipse(ctx, flight.x, flight.groundY, layout.size * 0.9, layout.size * 0.4, 0.35);
 }
