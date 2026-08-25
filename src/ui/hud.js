@@ -7,6 +7,8 @@ const FREE_HINTS = 2;
 export function createHud(handlers) {
   const root = document.getElementById('hud');
   const levelNumber = document.getElementById('level-number');
+  const levelGoal = document.getElementById('level-goal');
+  let goalTier = -1;
   const undoBadge = document.getElementById('undo-badge');
   const hintBadge = document.getElementById('hint-badge');
   const postBadge = document.getElementById('post-badge');
@@ -33,6 +35,26 @@ export function createHud(handlers) {
     },
     setLevel(level) {
       levelNumber.textContent = String(level);
+      goalTier = -1;
+    },
+    // Порог показывается ближайший достижимый: перебрал par — строка
+    // переезжает на две звезды, и число ходов один раз подсвечивается.
+    setGoal(moves, par) {
+      const twoStars = Math.ceil(par * 1.5);
+      const tier = moves <= par ? 3 : (moves <= twoStars ? 2 : 1);
+      let text = `Ходов ${moves}`;
+      if (tier === 3) text += ` · на ★★★ — ${par}`;
+      else if (tier === 2) text += ` · на ★★ — ${twoStars}`;
+      else text += ' · ★';
+      levelGoal.textContent = text;
+      if (goalTier >= 0 && tier !== goalTier) {
+        levelGoal.classList.remove('pulse');
+        // Перезапуск анимации: без чтения offsetWidth класс вернётся
+        // в том же кадре и ничего не проиграет.
+        void levelGoal.offsetWidth;
+        levelGoal.classList.add('pulse');
+      }
+      goalTier = tier;
     },
     // Когда бесплатные попытки кончились — на бейдже значок рекламы.
     update(status) {

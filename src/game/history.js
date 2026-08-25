@@ -6,12 +6,12 @@ export function createHistory() {
   return { stack: [] };
 }
 
-// Снимок хранится целиком: кроме столбиков в нём число построек,
-// иначе отмена хода оставит в городе дом за несобранный столбик.
+// Снимок хранится целиком: кроме столбиков в нём состояние города,
+// иначе отмена хода оставит дом за несобранный столбик.
 export function pushHistory(history, snapshot) {
   history.stack.push({
     posts: snapshot.posts.map((post) => post.slice()),
-    cityCount: snapshot.cityCount,
+    city: snapshot.city,
     moves: snapshot.moves
   });
   if (history.stack.length > MAX_DEPTH) history.stack.shift();

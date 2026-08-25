@@ -129,6 +129,31 @@ html, body {
   opacity: 0.55;
 }
 
+/* Строка с ходами не спорит с полем за внимание: мелкий кегль,
+   тот же тон, что у номера уровня. */
+.level-goal {
+  font-family: 'Onest', sans-serif;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  opacity: 0.55;
+  white-space: nowrap;
+}
+
+.level-goal.pulse {
+  animation: goal-pulse 620ms ease-out;
+}
+
+@keyframes goal-pulse {
+  0% { opacity: 0.55; transform: scale(1); }
+  30% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 0.55; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .level-goal.pulse { animation-duration: 240ms; }
+}
+
 .tool {
   pointer-events: auto;
   position: relative;

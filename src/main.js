@@ -9,7 +9,7 @@ import { findHint, findOptimal } from './game/solver.js';
 import { createHistory, pushHistory, popHistory, canUndo, clearHistory } from './game/history.js';
 import { computeLayout, hitTest, slotPosition } from './render/layout.js';
 import { drawScene } from './render/scene.js';
-import { createCity, prepareBuilding, commitBuilding, trimCity, resetCity, drawBuilding } from './render/city.js';
+import { createCity, prepareBuilding, commitBuilding, resetCity, drawBuilding, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding } from './render/city.js';
 import { createTweenPool, addTween, updateTweens, isBusy, EASING, setTimeScale } from './anim/tween.js';
 import { createFx, updateFx, spawnSplinters, shakeCamera } from './anim/fx.js';
 import * as sfx from './audio/sfx.js';
@@ -34,6 +34,7 @@ const WAVE_STEP_MS = 55;
 const HOUSE_MS = 320;
 const TRANSITION_MS = 550;
 const HINT_SHOW_MS = 3200;
+const WINDOW_STEP_MS = 60;
 const VIBRO_TAKE = 8;
 const VIBRO_PLACE = 12;
 const VIBRO_COMPLETE = 30;
@@ -197,6 +198,7 @@ function startLevel(id) {
 }
 
 function updateHud() {
+  if (app.state) hud.setGoal(app.state.moves, app.state.parMoves);
   hud.update({
     undoUsed: app.undoUsed,
     hintsUsed: app.hintsUsed,
@@ -314,7 +316,7 @@ function startFlight(to) {
 
   pushHistory(app.history, {
     posts: app.state.posts,
-    cityCount: app.city.buildings.length,
+    city: snapshotCity(app.city),
     moves: app.state.moves
   });
 
@@ -395,11 +397,13 @@ function completePost(index, color) {
     }
   });
 
-  const building = prepareBuilding(app.city, color, app.level);
+  // На заполненной площадке новая постройка не добавляется — этаж
+  // получает существующее здание, анимация та же.
+  const pending = prepareBuilding(app.city, color, app.level);
   app.cityAppear = {
     t: 0,
     draw(target, rect) {
-      drawBuilding(target, rect, app.city, building, this.t);
+      drawBuilding(target, rect, app.city, pending, this.t);
     }
   };
   addTween(app.tweens, {
@@ -410,9 +414,45 @@ function completePost(index, color) {
     },
     onDone: () => {
       app.cityAppear = null;
-      commitBuilding(app.city, building);
-      app.busy = false;
+      commitBuilding(app.city, pending);
       persist();
+      const district = completedDistrict(app.city);
+      if (district >= 0) {
+        lightDistrict(district);
+        return;
+      }
+      app.busy = false;
+      checkWin();
+    }
+  });
+}
+
+// Район завершён: окна загораются волной слева направо. Свет остаётся
+// навсегда, фон при этом не меняется.
+function lightDistrict(district) {
+  const order = lightingOrder(app.city, app.layout.city, district);
+  if (order.length === 0) {
+    app.busy = false;
+    checkWin();
+    return;
+  }
+  let lit = 0;
+  addTween(app.tweens, {
+    duration: WINDOW_STEP_MS * order.length,
+    onUpdate: (t) => {
+      const target = Math.min(order.length, Math.floor(t * order.length) + 1);
+      while (lit < target) {
+        lightBuilding(app.city, order[lit]);
+        lit += 1;
+      }
+    },
+    onDone: () => {
+      while (lit < order.length) {
+        lightBuilding(app.city, order[lit]);
+        lit += 1;
+      }
+      persist();
+      app.busy = false;
       checkWin();
     }
   });
@@ -487,7 +527,7 @@ async function requestUndo() {
   if (!snapshot) return;
   app.state.posts = snapshot.posts;
   app.state.moves = snapshot.moves;
-  trimCity(app.city, snapshot.cityCount);
+  restoreCity(app.city, snapshot.city);
   app.hand = null;
   app.hidden = null;
   app.undoUsed += 1;

@@ -19,7 +19,6 @@ const STEP_SLACK = 0.5;
 const CUBE_OF_STEP = 0.82;
 const FIELD_USABLE = 0.8;
 const STACK_ALLOWANCE = 1.6;
-const ROW_GAP_SHARE = 0.05;
 const SINGLE_ROW_LIMIT = 5;
 const HIT_WIDTH = 1.2;
 // Задний ряд чуть меньше переднего — иначе два ряда читаются как таблица.
@@ -37,20 +36,29 @@ export function computeLayout(width, height, postCount, capacity) {
 
   const rows = postCount > SINGLE_ROW_LIMIT ? 2 : 1;
   const perRow = Math.ceil(postCount / rows);
-  const rowGap = rows > 1 ? fieldHeight * ROW_GAP_SHARE : 0;
-  const rowHeight = (fieldHeight - rowGap * (rows - 1)) / rows;
+  const rowHeight = fieldHeight / rows;
 
   const cubeWidth = fitCubeWidth(width, perRow, rowHeight, capacity);
   const size = cubeWidth / 2;
   const step = cubeSideHeight(size);
   // Полная колонка: вместимость кубиков плюс половина верхнего ромба.
   const columnHeight = capacity * step + size * 0.5;
-  // Ряды стоят единым блоком по центру поля: при вместимости 3 стопки
-  // низкие, и прижимать их к краю — значит рвать экран пополам.
   const baseRadiusY = size * BASE_RADIUS_RATIO * 0.5;
-  const blockHeight = columnHeight + baseRadiusY * 2;
-  const groupHeight = rows * blockHeight + (rows - 1) * rowGap;
-  const groupTop = fieldTop + Math.max(0, (fieldHeight - groupHeight) / 2);
+  // Ряды раскладываются равномерно: зазор между рядами равен отступу
+  // под нижним рядом и над верхним. Задний ряд меньше, поэтому и блок
+  // у него меньше — считаем по каждому ряду отдельно.
+  const rowScales = [];
+  for (let row = 0; row < rows; row += 1) rowScales.push(rows > 1 && row === 0 ? BACK_ROW_SCALE : 1);
+  const blockHeight = columnHeight + baseRadiusY;
+  let blocksTotal = 0;
+  for (let row = 0; row < rows; row += 1) blocksTotal += blockHeight * rowScales[row];
+  const gap = Math.max(0, (fieldHeight - blocksTotal) / (rows + 1));
+  const rowTops = [];
+  let cursor = fieldTop + gap;
+  for (let row = 0; row < rows; row += 1) {
+    rowTops.push(cursor);
+    cursor += blockHeight * rowScales[row] + gap;
+  }
 
   const spacing = stepFor(width, perRow, cubeWidth);
   const posts = [];
@@ -58,10 +66,10 @@ export function computeLayout(width, height, postCount, capacity) {
     const row = Math.floor(i / perRow);
     const inRow = i - row * perRow;
     const count = Math.min(perRow, postCount - row * perRow);
-    const rowTop = groupTop + row * (blockHeight + rowGap);
+    const rowTop = rowTops[row];
     const rowWidth = count * spacing;
     const startX = (width - rowWidth) / 2 + spacing / 2;
-    const scale = rows > 1 && row === 0 ? BACK_ROW_SCALE : 1;
+    const scale = rowScales[row];
     posts.push({
       index: i,
       x: startX + inRow * spacing,
@@ -127,6 +135,7 @@ export function slotPosition(layout, postIndex, slot) {
   const scale = post.scale;
   return {
     x: post.x,
-    y: post.baseY - layout.size * scale * 0.25 - (slot + 1) * layout.step * scale
+    // Нижняя грань нижнего кубика ложится ровно на центр подставки.
+    y: post.baseY - (slot + 1) * layout.step * scale
   };
 }

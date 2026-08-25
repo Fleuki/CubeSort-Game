@@ -17,8 +17,11 @@ const RIGHT_DARK = 0.34;
 const STROKE_DARK = 0.5;
 const STROKE_WIDTH = 1.5;
 const SIDE_RATIO = 0.82;
-// Радиус подставки в долях ширины кубика.
-export const BASE_RADIUS_RATIO = 1.0;
+// Радиус подставки — полудиагональ нижней грани кубика с полем 16%.
+// Значение в полуширинах кубика, оно же доля диаметра от ширины кубика.
+export const BASE_RADIUS_RATIO = 1.16;
+// Толщина подставки в пикселях: плоский блин не читается как деталь.
+const BASE_THICKNESS = 5;
 // Подставка светлее тени, иначе низ стопки смазывается в тёмное пятно.
 const BASE_TONE = 0.1;
 const BASE_SHADOW_SPREAD = 1.35;
@@ -237,17 +240,25 @@ function symbolPath(ctx, kind, r, dy) {
 
 
 // Подставка: круглая деревянная площадка. Пустой столбик — это только она.
+// (x, baseY) — центр нижней грани нижнего кубика, он же центр подставки.
 export function drawPostBase(ctx, x, baseY, size) {
   const baseRx = size * BASE_RADIUS_RATIO;
   const baseRy = baseRx / 2;
-  // Пятно шире подставки: иначе ядро тени целиком уходит под неё
-  // и контакт с землёй не читается.
-  drawShadow(ctx, x, baseY, baseRy * 0.9, baseRx * 2 * BASE_SHADOW_SPREAD);
+  const thickness = Math.max(2, BASE_THICKNESS * (size / 30));
+  const bottomY = baseY + thickness;
+  // Контактная тень строится от нижнего эллипса подставки. Пятно шире
+  // самой подставки: иначе ядро целиком уходит под неё.
+  drawShadow(ctx, x, bottomY, thickness, baseRx * 2 * BASE_SHADOW_SPREAD);
 
+  // Боковая стенка: нижний эллипс, вертикальные края, верхний эллипс.
   ctx.fillStyle = shade(WOOD, BASE_TONE - 0.22);
   ctx.beginPath();
-  ctx.ellipse(x, baseY + baseRy * 0.18, baseRx, baseRy, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, bottomY, baseRx, baseRy, 0, 0, Math.PI);
+  ctx.lineTo(x - baseRx, baseY);
+  ctx.ellipse(x, baseY, baseRx, baseRy, 0, Math.PI, 0);
+  ctx.closePath();
   ctx.fill();
+
   ctx.fillStyle = shade(WOOD, BASE_TONE);
   ctx.beginPath();
   ctx.ellipse(x, baseY, baseRx, baseRy, 0, 0, Math.PI * 2);
@@ -255,6 +266,6 @@ export function drawPostBase(ctx, x, baseY, size) {
   ctx.strokeStyle = shade(WOOD, BASE_TONE - 0.2);
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.ellipse(x, baseY, baseRx * 0.72, baseRy * 0.72, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, baseY, baseRx * 0.74, baseRy * 0.74, 0, 0, Math.PI * 2);
   ctx.stroke();
 }
