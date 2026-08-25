@@ -9,7 +9,7 @@ import { findHint, findOptimal } from './game/solver.js';
 import { createHistory, pushHistory, popHistory, canUndo, clearHistory } from './game/history.js';
 import { computeLayout, hitTest, slotPosition } from './render/layout.js';
 import { drawScene } from './render/scene.js';
-import { createCity, prepareBuilding, commitBuilding, resetCity, drawBuilding, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding } from './render/city.js';
+import { createCity, prepareBuilding, commitBuilding, resetCity, drawBuilding, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding, cameraTarget, setCameraStage, syncCamera, rebuildCity, countColumns, CITY_SCHEMA_VERSION } from './render/city.js';
 import { createTweenPool, addTween, updateTweens, isBusy, EASING, setTimeScale } from './anim/tween.js';
 import { createFx, updateFx, spawnSplinters, shakeCamera } from './anim/fx.js';
 import * as sfx from './audio/sfx.js';
@@ -35,6 +35,7 @@ const HOUSE_MS = 320;
 const TRANSITION_MS = 550;
 const HINT_SHOW_MS = 3200;
 const WINDOW_STEP_MS = 60;
+const CAMERA_MS = 700;
 const VIBRO_TAKE = 8;
 const VIBRO_PLACE = 12;
 const VIBRO_COMPLETE = 30;
@@ -432,8 +433,7 @@ function completePost(index, color) {
 function lightDistrict(district) {
   const order = lightingOrder(app.city, app.layout.city, district);
   if (order.length === 0) {
-    app.busy = false;
-    checkWin();
+    moveCamera();
     return;
   }
   let lit = 0;
@@ -452,6 +452,29 @@ function lightDistrict(district) {
         lit += 1;
       }
       persist();
+      moveCamera();
+    }
+  });
+}
+
+// Камера отъезжает ступенью — после волны окон, а не вместе с ней:
+// плавный отъезд на каждый дом читался бы как убывание города.
+function moveCamera() {
+  const from = app.city.stage;
+  const to = cameraTarget(app.city);
+  if (Math.abs(to - from) < 0.001) {
+    app.busy = false;
+    checkWin();
+    return;
+  }
+  addTween(app.tweens, {
+    duration: CAMERA_MS,
+    easing: EASING.easeInOutCubic,
+    onUpdate: (t) => {
+      setCameraStage(app.city, from + (to - from) * t);
+    },
+    onDone: () => {
+      setCameraStage(app.city, to);
       app.busy = false;
       checkWin();
     }
@@ -576,6 +599,7 @@ async function earnReward() {
 function persist() {
   platform.save({
     level: app.progress.level,
+    citySchemaVersion: CITY_SCHEMA_VERSION,
     city: app.city.buildings,
     muted: app.settings.muted,
     vibro: app.settings.vibro
@@ -589,8 +613,15 @@ async function restore() {
   app.settings.muted = Boolean(data.muted);
   app.settings.vibro = data.vibro !== false;
   if (Array.isArray(data.city)) {
-    app.city.buildings = data.city.slice();
-    app.city.dirty = true;
+    // Сохранение старой версии не читаем по частям: город собирается
+    // заново по актуальным правилам из числа собранных столбиков.
+    if (data.citySchemaVersion === CITY_SCHEMA_VERSION) {
+      app.city.buildings = data.city.slice();
+      syncCamera(app.city);
+      app.city.dirty = true;
+    } else {
+      rebuildCity(app.city, countColumns(data.city));
+    }
   }
   sfx.setMuted(app.settings.muted);
 }

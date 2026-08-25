@@ -14,8 +14,9 @@ export const INK = '#2E2A24';
 const TOP_LIGHT = 0.18;
 const LEFT_DARK = 0.14;
 const RIGHT_DARK = 0.34;
-const STROKE_DARK = 0.5;
-const STROKE_WIDTH = 1.5;
+// Обводка деталей: одна на всю игру, город рисуется ей же.
+export const OUTLINE_DARK = 0.5;
+export const OUTLINE_WIDTH = 1.5;
 const SIDE_RATIO = 0.82;
 // Радиус подставки — полудиагональ нижней грани кубика с полем 16%.
 // Значение в полуширинах кубика, оно же доля диаметра от ширины кубика.
@@ -29,15 +30,21 @@ const BASE_SHADOW_SPREAD = 1.35;
 const SYMBOL_SCALE = 0.34;
 const SYMBOL_DARK = -0.4;
 const SYMBOL_LIGHT = 0.18;
-// Выступы: кубики соединяются друг с другом, как детали конструктора.
-const STUD_RADIUS = 0.13;
+// Выступ: кубики соединяются друг с другом, как детали конструктора.
+// Он всегда один и всегда по центру — разные выступы у разных рядов
+// читались как разные детали.
+const STUD_RADIUS = 0.2;
 const STUD_HEIGHT = 0.1;
-const STUD_INSET = 0.26;
-const SINGLE_STUD_WIDTH = 56;
-const SINGLE_STUD_RADIUS = 0.2;
+// Меньше двух пикселей выступ превращается в грязную точку — у мелких
+// кубиков города его лучше не рисовать вовсе.
+const MIN_STUD_RADIUS = 2;
 const STUD_TOP_LIGHT = 0.16;
 const STUD_SIDE_DARK = -0.12;
 const STUD_STROKE_DARK = -0.45;
+// Окно города: тёплый квадрат тем же оттиском, что и символы.
+const WINDOW_LIT = '#FFD98A';
+const WINDOW_SCALE = 0.26;
+const WINDOW_DARK = -0.45;
 
 // Символы различают цвета для дальтоников. Живут на боковых гранях:
 // на верхней их перекрывало бы отверстие, да и видно её только у верхнего
@@ -85,7 +92,13 @@ export function cubeSideHeight(size) {
 
 // (x, y) — центр верхней грани. size — половина ширины ромба.
 export function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
-  const base = PALETTE[colorIndex % PALETTE.length];
+  drawBlock(ctx, x, y, size, PALETTE[colorIndex % PALETTE.length], squash, colorIndex, false);
+}
+
+// Один рендер деталей на всю игру: и поле, и город. base — цвет детали,
+// squash сжимает только боковые грани, symbol — индекс символа на них
+// (-1 — без символа), lit — вместо символа тёплое окно.
+export function drawBlock(ctx, x, y, size, base, squash = 1, symbol = -1, lit = false) {
   const w = size;
   const h = size / 2;
   const side = cubeSideHeight(size) * squash;
@@ -98,8 +111,8 @@ export function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
   ctx.closePath();
   ctx.fillStyle = shade(base, TOP_LIGHT);
   ctx.fill();
-  ctx.strokeStyle = shade(base, -STROKE_DARK);
-  ctx.lineWidth = STROKE_WIDTH;
+  ctx.strokeStyle = shade(base, -OUTLINE_DARK);
+  ctx.lineWidth = OUTLINE_WIDTH;
   ctx.stroke();
 
   ctx.beginPath();
@@ -108,7 +121,8 @@ export function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
   ctx.lineTo(x, y + h + side);
   ctx.lineTo(x - w, y + side);
   ctx.closePath();
-  ctx.fillStyle = shade(base, -LEFT_DARK);
+  const leftFace = shade(base, -LEFT_DARK);
+  ctx.fillStyle = leftFace;
   ctx.fill();
   ctx.stroke();
 
@@ -118,38 +132,35 @@ export function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
   ctx.lineTo(x, y + h + side);
   ctx.lineTo(x + w, y + side);
   ctx.closePath();
-  ctx.fillStyle = shade(base, -RIGHT_DARK);
+  const rightFace = shade(base, -RIGHT_DARK);
+  ctx.fillStyle = rightFace;
   ctx.fill();
   ctx.stroke();
 
   const faceY = y + h / 2 + side / 2;
-  drawSymbol(ctx, x - w / 2, faceY, size, 0.5, colorIndex, shade(base, -LEFT_DARK));
-  drawSymbol(ctx, x + w / 2, faceY, size, -0.5, colorIndex, shade(base, -RIGHT_DARK));
+  if (symbol >= 0) {
+    drawSymbol(ctx, x - w / 2, faceY, size, 0.5, symbol, leftFace);
+    drawSymbol(ctx, x + w / 2, faceY, size, -0.5, symbol, rightFace);
+  } else if (lit) {
+    drawWindow(ctx, x - w / 2, faceY, size, 0.5, leftFace);
+    drawWindow(ctx, x + w / 2, faceY, size, -0.5, rightFace);
+  }
 }
 
-// Выступы на верхней грани. Рисуются только там, где верх виден: у верхнего
+// Выступ на верхней грани. Рисуется только там, где верх виден: у верхнего
 // кубика стопки, у поднятой группы и у одиночного кубика. Внутри стопки
 // верхняя грань закрыта следующим кубиком — и это создаёт ощущение,
 // что детали вставлены друг в друга.
 export function drawStuds(ctx, x, y, size, colorIndex) {
-  const base = PALETTE[colorIndex % PALETTE.length];
-  const cubeWidth = size * 2;
-  const height = cubeSideHeight(size) * STUD_HEIGHT;
+  drawStud(ctx, x, y, size, PALETTE[colorIndex % PALETTE.length]);
+}
+
+export function drawStud(ctx, x, y, size, base) {
+  const radius = size * 2 * STUD_RADIUS;
+  if (radius < MIN_STUD_RADIUS) return;
   ctx.strokeStyle = shade(base, STUD_STROKE_DARK);
-  ctx.lineWidth = STROKE_WIDTH;
-  // Четыре мелких выступа на маленьком экране сливаются в кашу.
-  if (cubeWidth < SINGLE_STUD_WIDTH) {
-    stud(ctx, x, y, cubeWidth * SINGLE_STUD_RADIUS, height, base);
-    return;
-  }
-  const radius = cubeWidth * STUD_RADIUS;
-  const offset = 1 - 2 * STUD_INSET;
-  for (let i = 0; i < 4; i += 1) {
-    // Сетка 2x2 лежит в плоскости грани: ромбом, а не квадратом на экране.
-    const u = i < 2 ? offset : -offset;
-    const v = i % 2 === 0 ? offset : -offset;
-    stud(ctx, x + (u - v) * (size / 2), y + (u + v) * (size / 4), radius, height, base);
-  }
+  ctx.lineWidth = OUTLINE_WIDTH;
+  stud(ctx, x, y, radius, cubeSideHeight(size) * STUD_HEIGHT, base);
 }
 
 function stud(ctx, x, y, rx, height, base) {
@@ -184,6 +195,24 @@ function drawSymbol(ctx, cx, cy, size, skew, colorIndex, faceColor) {
   ctx.stroke();
   ctx.strokeStyle = shade(faceColor, SYMBOL_DARK);
   symbolPath(ctx, SYMBOLS[colorIndex % SYMBOLS.length], r, 0);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Окно в городе — тот же оттиск, что и символ: тёплая заливка,
+// тёмный контур сверху и светлая линия снизу.
+function drawWindow(ctx, cx, cy, size, skew, faceColor) {
+  const r = size * WINDOW_SCALE * 0.5;
+  ctx.save();
+  ctx.transform(1, skew, 0, 1, cx, cy);
+  ctx.fillStyle = WINDOW_LIT;
+  ctx.fillRect(-r, -r, r * 2, r * 2);
+  ctx.lineWidth = Math.max(0.6, size * 0.05);
+  ctx.strokeStyle = shade(faceColor, WINDOW_DARK);
+  ctx.beginPath();
+  ctx.moveTo(-r, r);
+  ctx.lineTo(-r, -r);
+  ctx.lineTo(r, -r);
   ctx.stroke();
   ctx.restore();
 }

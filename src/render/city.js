@@ -1,46 +1,71 @@
 // Макет города на столе. Растёт между уровнями, геймплей не трогает —
-// это чистая награда. Все размеры — в единицах масштаба из scale.js.
+// это чистая награда. Собран из тех же кубиков, что и игровое поле:
+// свой рендер деталей здесь не заводится, всё идёт через iso.js.
 
-import { PALETTE, WOOD, TABLE, shade } from './iso.js';
+import { PALETTE, WOOD, TABLE, OUTLINE_DARK, OUTLINE_WIDTH, cubeSideHeight, drawBlock, drawStud, shade } from './iso.js';
 import { drawShadow, drawShadowAlong } from './shadow.js';
-import { heightUnits, widthUnits } from './scale.js';
+import {
+  CUBE_WIDTH_UNITS, GABLE_RISE, SLAB_HEIGHT, SLAB_OVERHANG, SPIRE_RISE,
+  CROWN_HEIGHT, CROWN_LARGE, CROWN_WIDTH, TRUNK_HEIGHT, TRUNK_WIDTH,
+  LAMP_HEAD_HEIGHT, LAMP_HEAD_WIDTH, LAMP_POST_HEIGHT, LAMP_POST_WIDTH, BUSH_SCALE,
+  KIND_ROOF, MAX_CUBES, buildingCubes, buildingHeightUnits, cubeHalf, propHeightUnits,
+  propWidthUnits, roofUnits
+} from './scale.js';
 
-// Площадка: на пустом городе занимает 60% ширины зоны и растёт
-// с застройкой, но не бесконечно.
-const PLATE_BASE_SHARE = 0.6;
-const PLATE_GROWTH = 0.05;
-const PLATE_GROWTH_LIMIT = 14;
-const PLATE_MAX_SHARE = 0.94;
-const PLATE_ASPECT = 0.46;
-const PLATE_CENTER_Y = 0.62;
-// Застройка живёт во внутренней части площадки: по краю идут деревья
-// и ограда, и налезать на них дома не должны.
-const INNER_SHARE = 0.72;
-const MIN_RINGS = 2;
-const MAX_RINGS = 4;
-const UNIT_OF_TILE = 0.45;
-// Самая высокая постройка плюс вынос дальнего кольца должны помещаться
-// над центром площадки, иначе башни лезут в HUD.
-const TALLEST_UNITS = 3.4;
-const JITTER = 0.06;
+// Версия схемы города. Не совпала с сохранением — город пересобирается
+// с нуля по актуальным правилам, прогресс уровней при этом цел.
+export const CITY_SCHEMA_VERSION = 3;
 
 // Ступени застройки: тип новой постройки зависит от того, сколько их уже.
 const HOUSE1_UNTIL = 8;
 const HOUSE2_UNTIL = 20;
+const BLOCK3_UNTIL = 40;
 const LANDMARK_AT = [45, 60];
 const ROAD_FROM = 10;
-const LAMPS_FROM = 16;
-const BRIDGE_FROM = 26;
 const DISTRICT_SIZE = 10;
 // Потолок плотности: дальше город растёт вверх, а не расползается.
-const MAX_BUILDINGS = 61;
+const MAX_BUILDINGS = 60;
 
-const WINDOW_LIT = '#FFD98A';
+// Камера отъезжает ступенями, по одной на завершённый район.
+const ZOOM_STEP = 0.86;
+const MAX_STAGE = 5;
+
+// Раскладка по золотому углу равномерно заполняет круг без решётки.
+const GOLDEN_ANGLE = (137.507 * Math.PI) / 180;
+// Минимальное расстояние между соседями в такой спирали равно шагу,
+// джиттер съедает ещё 3.2%. Шаг берём с запасом на ширину кубика,
+// требуемый зазор в 0.25 и вынос кроны большого дерева.
+const STEP_UNITS = 2.85;
+const JITTER = 0.05;
+// Каждый шестой участок отдан озеленению — деревья стоят между домами,
+// а не жмутся к ограде.
+const PROP_EVERY = 6;
+// Запас от крайней постройки до ограды: половина кубика плюс поле.
+const EDGE_UNITS = CUBE_WIDTH_UNITS / 2 + 0.5;
+
+// Овал: центр ниже середины зоны, вертикальное сжатие — как у кубика.
+// Сплющить его можно, но не до полоски.
+const PLATE_CENTER_Y = 0.6;
+const PLATE_ASPECT = 0.5;
+const MIN_PLATE_ASPECT = 0.36;
+const PLATE_MARGIN = 8;
+const FENCE_RADIUS = 0.97;
+// Стартовый масштаб: одноэтажный домик занимает эту долю высоты зоны,
+// если такой город помещается в неё целиком.
+const START_HOUSE_SHARE = 0.14;
+
 const GLOW_ALPHA = 0.12;
-const STREAM = '#3E9E93';
+const ROOF_DARK = -0.18;
+// Пятно тени шире основания: под самим кубиком его не видно —
+// низ детали накрывает пятно целиком.
+const SHADOW_SPREAD = 1.6;
+const CROWN_COLORS = ['#5B9750', '#4C8547'];
+const LAMP_HEAD_COLOR = '#E2A238';
 
 export function createCity(buildings = []) {
-  return { buildings: buildings.slice(), pending: null, dirty: true, canvas: null, ctx: null };
+  const city = { buildings: buildings.slice(), pending: null, stage: 0, dirty: true, canvas: null, ctx: null };
+  syncCamera(city);
+  return city;
 }
 
 // Что появится за очередной собранный столбик: новая постройка или,
@@ -49,20 +74,10 @@ export function prepareBuilding(city, colorIndex, level) {
   city.dirty = true;
   if (city.buildings.length >= MAX_BUILDINGS) {
     const target = pickUpgrade(city, level);
-    city.pending = { building: target, upgrade: true, floors: target.floors + 1 };
+    city.pending = target ? { building: target, upgrade: true, floors: target.floors + 1 } : null;
     return city.pending;
   }
-  const order = city.buildings.length;
-  const building = {
-    index: order,
-    color: colorIndex,
-    kind: kindFor(order),
-    floors: 1,
-    district: Math.floor(order / DISTRICT_SIZE),
-    lit: false,
-    seed: (order * 2654435761) >>> 0
-  };
-  city.pending = { building, upgrade: false };
+  city.pending = { building: makeBuilding(city.buildings.length, colorIndex), upgrade: false };
   return city.pending;
 }
 
@@ -77,13 +92,41 @@ export function commitBuilding(city, pending) {
 export function resetCity(city) {
   city.buildings.length = 0;
   city.pending = null;
+  syncCamera(city);
   city.dirty = true;
 }
 
-// Снимок для отмены хода: меняться могут число построек, этажность и свет.
+// Сколько столбиков собрано всего: постройки плюс надстроенные этажи.
+export function countColumns(buildings) {
+  let total = 0;
+  for (let i = 0; i < buildings.length; i += 1) total += Math.max(1, Number(buildings[i].floors) || 1);
+  return total;
+}
+
+// Миграция: город собирается заново из числа собранных столбиков.
+// Порядок построек, цвета и свет полностью определяются этим числом.
+export function rebuildCity(city, columns) {
+  const total = Math.max(0, Math.floor(columns) || 0);
+  const count = Math.min(MAX_BUILDINGS, total);
+  city.buildings.length = 0;
+  city.pending = null;
+  for (let i = 0; i < count; i += 1) city.buildings.push(makeBuilding(i, migratedColor(i)));
+  for (let extra = 0; extra < total - count; extra += 1) {
+    const target = pickUpgrade(city, extra);
+    if (target) target.floors += 1;
+  }
+  const districts = Math.floor(count / DISTRICT_SIZE);
+  for (let i = 0; i < count; i += 1) city.buildings[i].lit = city.buildings[i].district < districts;
+  syncCamera(city);
+  city.dirty = true;
+}
+
+// Снимок для отмены хода: меняться могут число построек, этажность,
+// свет и ступень камеры.
 export function snapshotCity(city) {
   return {
     count: city.buildings.length,
+    stage: city.stage,
     floors: city.buildings.map((building) => building.floors),
     lit: city.buildings.map((building) => building.lit)
   };
@@ -97,6 +140,7 @@ export function restoreCity(city, snapshot) {
     city.buildings[i].lit = snapshot.lit[i];
   }
   city.pending = null;
+  city.stage = snapshot.stage;
   city.dirty = true;
 }
 
@@ -107,12 +151,26 @@ export function completedDistrict(city) {
   return count / DISTRICT_SIZE - 1;
 }
 
+// Ступень камеры: одна на завершённый район, дальше масштаб фиксирован.
+export function cameraTarget(city) {
+  return Math.min(MAX_STAGE, Math.floor(city.buildings.length / DISTRICT_SIZE));
+}
+
+export function syncCamera(city) {
+  city.stage = cameraTarget(city);
+}
+
+export function setCameraStage(city, stage) {
+  city.stage = stage;
+  city.dirty = true;
+}
+
 // Порядок зажигания окон: волной слева направо.
 export function lightingOrder(city, rect, district) {
-  const count = layoutCount(city);
+  const geo = geometry(rect, city);
   return city.buildings
     .filter((building) => building.district === district && !building.lit)
-    .map((building) => ({ building, x: buildingPoint(rect, count, building).x }))
+    .map((building) => ({ building, x: buildingPoint(geo, building).x }))
     .sort((a, b) => a.x - b.x)
     .map((item) => item.building);
 }
@@ -122,70 +180,131 @@ export function lightBuilding(city, building) {
   city.dirty = true;
 }
 
+function makeBuilding(order, colorIndex) {
+  return {
+    index: order,
+    color: colorIndex % PALETTE.length,
+    kind: kindFor(order),
+    floors: 1,
+    district: Math.floor(order / DISTRICT_SIZE),
+    lit: false,
+    seed: hash(order)
+  };
+}
+
 function kindFor(order) {
   const number = order + 1;
   if (LANDMARK_AT.indexOf(number) >= 0) return 'landmark';
   if (number <= HOUSE1_UNTIL) return 'house1';
   if (number <= HOUSE2_UNTIL) return 'house2';
-  return 'tower';
+  if (number <= BLOCK3_UNTIL) return 'block3';
+  return 'block4';
 }
 
+// Перемешивание битов, а не просто умножение: у мультипликативного
+// хеша младшие биты повторяются, и все дома выходили одного цвета.
+function hash(value) {
+  let x = (value + 1) >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 2246822507) >>> 0;
+  x = Math.imul(x ^ (x >>> 13), 3266489909) >>> 0;
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+// Цвета пересобранного города: соседние номера не повторяются,
+// и каждая семёрка сдвинута относительно предыдущей.
+function migratedColor(order) {
+  return (order * 3 + Math.floor(order / PALETTE.length)) % PALETTE.length;
+}
+
+// Детерминированно «случайное» здание: от номера уровня, а не от
+// Math.random, иначе после отмены хода этаж уедет другому дому.
+// Стопка выше MAX_CUBES не растёт — ищем следующую подходящую.
 function pickUpgrade(city, level) {
-  // Детерминированно «случайное» здание: от уровня, а не от Math.random,
-  // иначе после отмены хода этаж уедет другому дому.
-  const index = ((level * 2654435761) >>> 0) % city.buildings.length;
-  return city.buildings[index];
+  const count = city.buildings.length;
+  if (count === 0) return null;
+  const start = hash(level) % count;
+  for (let i = 0; i < count; i += 1) {
+    const building = city.buildings[(start + i) % count];
+    if (buildingCubes(building.kind, building.floors + 1) > buildingCubes(building.kind, building.floors)) {
+      return building;
+    }
+  }
+  return null;
 }
 
-function layoutCount(city) {
-  return city.buildings.length + (city.pending && !city.pending.upgrade ? 1 : 0);
+// --- раскладка ------------------------------------------------------------
+
+// Участки нумеруются подряд, каждый PROP_EVERY-й отдан озеленению.
+function plotOfBuilding(order) {
+  return order + Math.floor(order / (PROP_EVERY - 1));
 }
 
-function plate(rect, count) {
-  const grown = 1 + PLATE_GROWTH * Math.min(count, PLATE_GROWTH_LIMIT);
-  const rx = Math.min(rect.width * PLATE_BASE_SHARE * grown, rect.width * PLATE_MAX_SHARE) / 2;
+function isPropPlot(plot) {
+  return plot % PROP_EVERY === PROP_EVERY - 1;
+}
+
+// Сколько построек должно поместиться на площадке при данной ступени
+// камеры. Значение непрерывное: во время отъезда камеры ступень дробная.
+function slotsForStage(stage) {
+  return Math.min(MAX_BUILDINGS, DISTRICT_SIZE * (stage + 1));
+}
+
+// Участков больше, чем построек: часть отдана озеленению.
+function plotsForStage(stage) {
+  return (slotsForStage(stage) * PROP_EVERY) / (PROP_EVERY - 1);
+}
+
+const tallestCache = new Map();
+
+// Самая высокая постройка среди номеров 1..slots — по ней считается,
+// сколько места нужно над дальним краем площадки.
+function tallestUpTo(slots) {
+  const cached = tallestCache.get(slots);
+  if (cached !== undefined) return cached;
+  let tallest = 0;
+  for (let order = 0; order < slots; order += 1) {
+    tallest = Math.max(tallest, buildingHeightUnits(kindFor(order), 1));
+  }
+  // Надстроенные этажи упираются в MAX_CUBES — их тоже надо уместить.
+  if (slots >= MAX_BUILDINGS) tallest = Math.max(tallest, MAX_CUBES + SLAB_HEIGHT);
+  tallestCache.set(slots, tallest);
+  return tallest;
+}
+
+function tallestUnits(stage) {
+  const slots = slotsForStage(stage);
+  const low = Math.floor(slots);
+  const high = Math.ceil(slots);
+  const a = tallestUpTo(low);
+  return a + (tallestUpTo(high) - a) * (slots - low);
+}
+
+// Геометрия площадки. Единица масштаба — CITY_UNIT, высота городского
+// кубика: она уменьшается ступенями камеры, а овал считается от неё
+// и от фактического размера зоны, чтобы никогда не обрезаться.
+function geometry(rect, city) {
+  const stage = Math.max(0, Math.min(MAX_STAGE, city.stage));
+  const plots = plotsForStage(stage);
+  const radiusUnits = STEP_UNITS * Math.sqrt(Math.max(1, plots - 1)) + EDGE_UNITS;
+  const tallest = tallestUnits(stage);
+  const above = rect.height * PLATE_CENTER_Y - PLATE_MARGIN;
+  const below = rect.height * (1 - PLATE_CENTER_Y) - PLATE_MARGIN;
+  const byZoom = ((rect.height * START_HOUSE_SHARE) / (1 + GABLE_RISE)) * Math.pow(ZOOM_STEP, stage);
+  const byWidth = (rect.width / 2 - PLATE_MARGIN) / radiusUnits;
+  const byTop = above / (radiusUnits * MIN_PLATE_ASPECT + tallest);
+  const byBottom = below / (radiusUnits * MIN_PLATE_ASPECT);
+  const unit = Math.max(1, Math.min(byZoom, byWidth, byTop, byBottom));
+  const rx = radiusUnits * unit;
+  const ry = Math.min(rx * PLATE_ASPECT, above - tallest * unit, below);
   return {
     x: rect.x + rect.width / 2,
     y: rect.y + rect.height * PLATE_CENTER_Y,
     rx,
-    ry: rx * PLATE_ASPECT
+    ry,
+    aspect: ry / rx,
+    unit,
+    plots
   };
-}
-
-// Квадратная спираль от центра: город растёт пятном, а не рядами.
-function spiralCell(index) {
-  if (index === 0) return { gx: 0, gy: 0 };
-  let ring = 1;
-  let start = 1;
-  while (start + 8 * ring <= index) {
-    start += 8 * ring;
-    ring += 1;
-  }
-  const offset = index - start;
-  const side = Math.floor(offset / (2 * ring));
-  const step = offset % (2 * ring);
-  if (side === 0) return { gx: ring, gy: -ring + step };
-  if (side === 1) return { gx: ring - step, gy: ring };
-  if (side === 2) return { gx: -ring, gy: ring - step };
-  return { gx: -ring + step, gy: -ring };
-}
-
-function ringsFor(count) {
-  const needed = Math.ceil((Math.sqrt(Math.max(1, count)) - 1) / 2);
-  return Math.max(MIN_RINGS, Math.min(MAX_RINGS, needed));
-}
-
-// Шаг сетки подбирается так, чтобы дальнее кольцо ровно вписалось
-// во внутреннюю часть площадки — тогда клампы не нужны и дома
-// не налезают на деревья и ограду.
-function grid(rect, count) {
-  const disc = plate(rect, count);
-  const rings = ringsFor(count);
-  const tileW = (disc.rx * INNER_SHARE) / rings;
-  const tileH = tileW * PLATE_ASPECT;
-  const headroom = Math.max(1, disc.y - rect.y - rings * tileH);
-  const unit = Math.min(tileW * UNIT_OF_TILE, headroom / TALLEST_UNITS);
-  return { disc, tileW, tileH, unit };
 }
 
 function jitterOf(seed) {
@@ -194,16 +313,21 @@ function jitterOf(seed) {
   return { jx: a * 2 * JITTER, jy: b * 2 * JITTER };
 }
 
-function buildingPoint(rect, count, building) {
-  const g = grid(rect, count);
-  const cell = spiralCell(building.index);
-  const shift = jitterOf(building.seed);
-  return {
-    x: g.disc.x + (cell.gx - cell.gy) * (g.tileW / 2) + shift.jx * g.tileW,
-    y: g.disc.y + (cell.gx + cell.gy) * (g.tileH / 2) + shift.jy * g.tileH,
-    unit: g.unit
-  };
+// Филлотаксис: угол по золотому сечению, радиус по корню номера.
+function plotPoint(geo, plot, seed) {
+  const angle = plot * GOLDEN_ANGLE;
+  const radius = STEP_UNITS * Math.sqrt(plot);
+  const shift = jitterOf(seed);
+  const u = Math.cos(angle) * radius + shift.jx * STEP_UNITS;
+  const v = Math.sin(angle) * radius + shift.jy * STEP_UNITS;
+  return { x: geo.x + u * geo.unit, y: geo.y + v * geo.unit * geo.aspect, unit: geo.unit };
 }
+
+function buildingPoint(geo, building) {
+  return plotPoint(geo, plotOfBuilding(building.index), building.seed);
+}
+
+// --- запечённый макет -----------------------------------------------------
 
 // Отдельный offscreen: макет перерисовывается при изменении, а не каждый кадр.
 export function getCityCanvas(city, rect) {
@@ -221,9 +345,10 @@ export function getCityCanvas(city, rect) {
   }
   if (city.dirty) {
     const local = { x: 0, y: 0, width: w, height: h };
+    const geo = geometry(local, city);
     city.ctx.clearRect(0, 0, w, h);
-    drawGround(city.ctx, local, city);
-    const items = sceneItems(local, city);
+    drawGround(city.ctx, geo, city);
+    const items = sceneItems(geo, city);
     for (let i = 0; i < items.length; i += 1) paintItem(city.ctx, items[i], 1);
     city.dirty = false;
   }
@@ -233,17 +358,15 @@ export function getCityCanvas(city, rect) {
 // Постройка в момент появления: рисуется поверх запечённого макета.
 export function drawBuilding(ctx, rect, city, pending, appear) {
   if (!pending) return;
-  const point = buildingPoint(rect, layoutCount(city), pending.building);
+  const geo = geometry(rect, city);
   ctx.save();
   ctx.beginPath();
   ctx.rect(rect.x, rect.y, rect.width, rect.height);
   ctx.clip();
   paintItem(ctx, {
-    kind: pending.building.kind,
     building: pending.building,
     floors: pending.upgrade ? pending.floors : pending.building.floors,
-    point,
-    groundY: point.y
+    point: buildingPoint(geo, pending.building)
   }, appear);
   ctx.restore();
 }
@@ -251,124 +374,91 @@ export function drawBuilding(ctx, rect, city, pending, appear) {
 // Все объекты макета в одном списке и с явной точкой касания земли:
 // глубина считается по основанию, иначе высокий дом «перекрывает»
 // дерево, которое стоит ближе к зрителю.
-function sceneItems(rect, city) {
-  const count = layoutCount(city);
-  const g = grid(rect, count);
+function sceneItems(geo, city) {
   const items = [];
-  const props = [
-    { kind: 'treeLarge', ux: -0.74, uy: 0.24 },
-    { kind: 'treeSmall', ux: 0.78, uy: -0.04 },
-    { kind: 'bush', ux: -0.36, uy: 0.66 },
-    { kind: 'bush', ux: 0.5, uy: 0.62 }
-  ];
-  if (city.buildings.length >= LAMPS_FROM) {
-    props.push({ kind: 'lamp', ux: -0.6, uy: 0.5 });
-    props.push({ kind: 'lamp', ux: 0.64, uy: 0.44 });
-  }
-  if (city.buildings.length >= BRIDGE_FROM) {
-    props.push({ kind: 'bridge', ux: 0.02, uy: 0.72 });
-  }
-  for (let i = 0; i < props.length; i += 1) {
-    const prop = props[i];
-    const point = { x: g.disc.x + g.disc.rx * prop.ux, y: g.disc.y + g.disc.ry * prop.uy, unit: g.unit };
-    items.push({ kind: prop.kind, point, groundY: point.y, variant: i });
+  const limit = Math.ceil(geo.plots);
+  for (let plot = 0; plot < limit; plot += 1) {
+    if (!isPropPlot(plot)) continue;
+    const seed = hash(plot + 7919);
+    const point = plotPoint(geo, plot, seed);
+    items.push({ kind: propKind(plot, seed), point, seed });
   }
   for (let i = 0; i < city.buildings.length; i += 1) {
     const building = city.buildings[i];
     if (city.pending && city.pending.upgrade && city.pending.building === building) continue;
-    const point = buildingPoint(rect, count, building);
-    items.push({ kind: building.kind, building, floors: building.floors, point, groundY: point.y });
+    items.push({ building, floors: building.floors, point: buildingPoint(geo, building) });
   }
-  items.sort((a, b) => a.groundY - b.groundY);
+  items.sort((a, b) => a.point.y - b.point.y);
   return items;
+}
+
+function propKind(plot, seed) {
+  const roll = seed % 10;
+  if (roll < 4) return 'treeSmall';
+  if (roll < 6) return 'treeLarge';
+  if (roll < 8) return 'bush';
+  return plot > DISTRICT_SIZE ? 'lamp' : 'bush';
 }
 
 function paintItem(ctx, item, appear) {
   const unit = item.point.unit;
-  const kind = item.kind;
-  const height = heightUnits(kind, item.floors || 1) * unit;
-  const width = widthUnits(kind) * unit;
-  const rise = (1 - appear) * (height + unit * 0.6);
-  const x = item.point.x;
-  const y = item.point.y + rise;
-  if (item.building) {
-    paintBuilding(ctx, item.building, x, y, width, height, unit, appear);
-    return;
-  }
-  if (kind === 'lamp') lamp(ctx, x, y, width, height);
-  else if (kind === 'bridge') bridge(ctx, x, y, width, height);
-  else if (kind === 'bush') bush(ctx, x, y, width, height, item.variant);
-  else tree(ctx, x, y, width, height, item.variant);
+  const height = item.building
+    ? buildingHeightUnits(item.building.kind, item.floors) * unit
+    : propHeightUnits(item.kind) * unit;
+  // Постройка выезжает снизу: поднимаем точку касания, а не сам объект.
+  const y = item.point.y + (1 - appear) * (height + unit * 0.6);
+  if (item.building) paintBuilding(ctx, item.building, item.point.x, y, unit, item.floors);
+  else paintProp(ctx, item.kind, item.point.x, y, unit, item.seed);
 }
 
 // --- участок --------------------------------------------------------------
 
-// До первой постройки участок уже обжитой: ограда, деревья, кусты.
-// Пустой овал читался бы как ошибка загрузки, а не как награда.
-function drawGround(ctx, rect, city) {
-  const g = grid(rect, layoutCount(city));
-  const disc = g.disc;
+function drawGround(ctx, geo, city) {
   ctx.fillStyle = 'rgba(154, 123, 82, 0.12)';
   ctx.beginPath();
-  ctx.ellipse(disc.x, disc.y + disc.ry * 0.06, disc.rx * 1.02, disc.ry * 1.02, 0, 0, Math.PI * 2);
+  ctx.ellipse(geo.x, geo.y + geo.ry * 0.06, geo.rx * 1.02, geo.ry * 1.02, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = shade(TABLE, 0.34);
   ctx.beginPath();
-  ctx.ellipse(disc.x, disc.y, disc.rx, disc.ry, 0, 0, Math.PI * 2);
+  ctx.ellipse(geo.x, geo.y, geo.rx, geo.ry, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  if (city.buildings.length >= ROAD_FROM) drawRoad(ctx, disc);
-  if (city.buildings.length >= BRIDGE_FROM) drawStream(ctx, disc, g.unit);
-  drawFence(ctx, disc, g.unit);
+  if (city.buildings.length >= ROAD_FROM) drawRoad(ctx, geo);
+  drawFence(ctx, geo);
 }
 
-function drawRoad(ctx, disc) {
+function drawRoad(ctx, geo) {
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(disc.x, disc.y, disc.rx, disc.ry, 0, 0, Math.PI * 2);
+  ctx.ellipse(geo.x, geo.y, geo.rx, geo.ry, 0, 0, Math.PI * 2);
   ctx.clip();
   ctx.fillStyle = 'rgba(154, 123, 82, 0.22)';
   ctx.beginPath();
-  ctx.moveTo(disc.x - disc.rx, disc.y + disc.ry * 0.22);
-  ctx.lineTo(disc.x + disc.rx, disc.y - disc.ry * 0.52);
-  ctx.lineTo(disc.x + disc.rx, disc.y - disc.ry * 0.12);
-  ctx.lineTo(disc.x - disc.rx, disc.y + disc.ry * 0.62);
+  ctx.moveTo(geo.x - geo.rx, geo.y + geo.ry * 0.22);
+  ctx.lineTo(geo.x + geo.rx, geo.y - geo.ry * 0.52);
+  ctx.lineTo(geo.x + geo.rx, geo.y - geo.ry * 0.12);
+  ctx.lineTo(geo.x - geo.rx, geo.y + geo.ry * 0.62);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
 }
 
-// Ручей: узкая приглушённая лента у переднего края, мост её переходит.
-function drawStream(ctx, disc, unit) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(disc.x, disc.y, disc.rx, disc.ry, 0, 0, Math.PI * 2);
-  ctx.clip();
-  // Вода приглушена прозрачностью: яркая бирюза на песке читается
-  // как лужа краски, а не как ручей.
-  ctx.globalAlpha = 0.5;
-  ctx.strokeStyle = shade(STREAM, 0.3);
-  ctx.lineWidth = Math.max(2, unit * 0.4);
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(disc.x - disc.rx * 0.86, disc.y + disc.ry * 0.94);
-  ctx.quadraticCurveTo(disc.x, disc.y + disc.ry * 0.62, disc.x + disc.rx * 0.86, disc.y + disc.ry * 0.9);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawFence(ctx, disc, unit) {
+// Забор идёт по краю овала, нижние концы столбиков касаются поверхности.
+function drawFence(ctx, geo) {
   const posts = 9;
   const points = [];
   for (let i = 0; i < posts; i += 1) {
     const angle = Math.PI * (1.12 + (i / (posts - 1)) * 0.76);
-    points.push({ x: disc.x + Math.cos(angle) * disc.rx * 0.92, y: disc.y + Math.sin(angle) * disc.ry * 0.92 });
+    points.push({
+      x: geo.x + Math.cos(angle) * geo.rx * FENCE_RADIUS,
+      y: geo.y + Math.sin(angle) * geo.ry * FENCE_RADIUS
+    });
   }
-  const height = unit * 0.5;
+  const height = geo.unit * 0.5;
   // Одна вытянутая тень на всю дугу, а не пятно под каждой секцией.
-  drawShadowAlong(ctx, points, height, unit * 0.2);
+  drawShadowAlong(ctx, points, height, geo.unit * 0.2);
   ctx.strokeStyle = shade(WOOD, -0.08);
-  ctx.lineWidth = Math.max(1.2, unit * 0.05);
+  ctx.lineWidth = Math.max(1.2, geo.unit * 0.05);
   for (let rail = 0; rail < 2; rail += 1) {
     ctx.beginPath();
     const lift = height * (rail === 0 ? 0.78 : 0.38);
@@ -381,9 +471,8 @@ function drawFence(ctx, disc, unit) {
     ctx.stroke();
   }
   for (let i = 0; i < points.length; i += 1) {
-    // Столбики стоят на земле: нижний конец — ровно точка касания.
     const edge = i === 0 || i === points.length - 1;
-    ctx.lineWidth = Math.max(1.2, unit * (edge ? 0.08 : 0.05));
+    ctx.lineWidth = Math.max(1.2, geo.unit * (edge ? 0.08 : 0.05));
     ctx.beginPath();
     ctx.moveTo(points[i].x, points[i].y);
     ctx.lineTo(points[i].x, points[i].y - height * (edge ? 1.25 : 1));
@@ -393,28 +482,23 @@ function drawFence(ctx, disc, unit) {
 
 // --- постройки ------------------------------------------------------------
 
-// Высота из таблицы масштабов — это высота ВСЕЙ постройки вместе с крышей,
-// поэтому корпусу достаётся только часть, иначе домик вытягивается в башню.
-const BODY_SHARE = { house1: 0.62, house2: 0.7, landmark: 0.74, tower: 0.94 };
-
-function paintBuilding(ctx, building, x, y, width, height, unit, appear) {
-  const color = PALETTE[building.color % PALETTE.length];
-  const half = width / 2;
-  const body = height * (BODY_SHARE[building.kind] || 0.9);
-  const roof = height - body;
-  if (building.lit) glow(ctx, x, y - height * 0.45, width * 2.4, height);
-  prism(ctx, x, y, half, body, color);
-  if (building.kind === 'house1' || building.kind === 'house2') {
-    gableRoof(ctx, x, y - body, half, color, roof);
-  } else if (building.kind === 'landmark') {
-    crown(ctx, x, y - body, half, color, building.seed, roof);
-  } else {
-    flatRoof(ctx, x, y - body, half, color);
+// Здание — стопка городских кубиков плюс крыша. Выступ получает верхний
+// кубик, внутренние — нет, ровно как на игровом поле.
+function paintBuilding(ctx, building, x, groundY, unit, floors) {
+  const base = PALETTE[building.color % PALETTE.length];
+  const cubes = buildingCubes(building.kind, floors);
+  const half = cubeHalf(unit);
+  const height = (cubes + roofUnits(building.kind)) * unit;
+  if (building.lit) glow(ctx, x, groundY - height * 0.45, half * 2.4, height);
+  drawShadow(ctx, x, groundY, height, half * 2 * SHADOW_SPREAD);
+  for (let i = 0; i < cubes; i += 1) {
+    drawBlock(ctx, x, groundY - (i + 1) * unit, half, base, 1, -1, building.lit);
   }
-  if (building.kind !== 'house1') {
-    windows(ctx, x, y, half, body, color, unit, building.lit);
-  }
-  void appear;
+  const topY = groundY - cubes * unit;
+  drawStud(ctx, x, topY, half, base);
+  const roof = KIND_ROOF[building.kind];
+  if (roof === 'gable') gableRoof(ctx, x, topY, half, base, GABLE_RISE * unit);
+  else spire(ctx, x, topY, half, base, unit, roof === 'spire');
 }
 
 // Мягкое тёплое свечение вокруг зданий завершённого района.
@@ -434,98 +518,43 @@ function glow(ctx, x, y, rx, ry) {
   ctx.restore();
 }
 
-// Изометрическая коробка: (x, y) — центр опоры на столе.
-function prism(ctx, x, y, w, h, color) {
-  const half = w / 2;
-  // Точка касания — центр опоры коробки, а не её передний угол.
-  drawShadow(ctx, x, y - half, h, w * 2.1);
-  ctx.strokeStyle = shade(color, -0.5);
-  ctx.lineWidth = 1.2;
-
-  ctx.beginPath();
-  ctx.moveTo(x - w, y - half);
-  ctx.lineTo(x, y);
-  ctx.lineTo(x, y - h);
-  ctx.lineTo(x - w, y - h - half);
-  ctx.closePath();
-  ctx.fillStyle = shade(color, -0.14);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(x + w, y - half);
-  ctx.lineTo(x, y);
-  ctx.lineTo(x, y - h);
-  ctx.lineTo(x + w, y - h - half);
-  ctx.closePath();
-  ctx.fillStyle = shade(color, -0.34);
-  ctx.fill();
-  ctx.stroke();
-}
-
-function flatRoof(ctx, x, y, w, color) {
-  const half = w / 2;
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x + w, y - half);
-  ctx.lineTo(x, y - w);
-  ctx.lineTo(x - w, y - half);
-  ctx.closePath();
-  ctx.fillStyle = shade(color, -0.18);
-  ctx.fill();
-  ctx.stroke();
-}
-
-// Двускатная крыша: конёк идёт вдоль левой грани, к зрителю смотрят
-// скат и фронтон. Без неё коробка читается как обычный кубик.
-function gableRoof(ctx, x, y, w, color, roofHeight) {
-  const half = w / 2;
-  const rise = Math.max(w * 0.35, roofHeight - half * 0.6);
-  const west = { x: x - w, y: y - half };
-  const north = { x, y: y - w };
-  const east = { x: x + w, y: y - half };
-  const south = { x, y };
-  const ridgeBack = { x: x - w / 2, y: y - w * 0.75 - rise };
-  const ridgeFront = { x: x + w / 2, y: y - w * 0.25 - rise };
-
-  ctx.strokeStyle = shade(color, -0.5);
-  ctx.lineWidth = 1;
+// Плоская крыша — плита из того же кубика, шире стопки и низкая.
+// Со шпилем поверх плиты вырастает пирамидка: так выглядит доминанта.
+function spire(ctx, x, topY, half, base, unit, withSpire) {
+  const color = shade(base, ROOF_DARK);
+  const slabHalf = half * (1 + SLAB_OVERHANG);
+  const slabHeight = SLAB_HEIGHT * unit;
+  const slabTop = topY - slabHeight;
+  drawBlock(ctx, x, slabTop, slabHalf, color, slabHeight / cubeSideHeight(slabHalf));
+  if (!withSpire) return;
+  const apex = slabTop - SPIRE_RISE * unit;
+  const w = half * 0.62;
+  const h = w / 2;
+  ctx.strokeStyle = shade(base, -OUTLINE_DARK);
+  ctx.lineWidth = OUTLINE_WIDTH;
   ctx.lineJoin = 'round';
-
-  quad(ctx, north, east, ridgeFront, ridgeBack, shade(color, -0.3));
-  quad(ctx, west, south, ridgeFront, ridgeBack, shade(color, -0.18));
-  ctx.beginPath();
-  ctx.moveTo(south.x, south.y);
-  ctx.lineTo(east.x, east.y);
-  ctx.lineTo(ridgeFront.x, ridgeFront.y);
-  ctx.closePath();
-  ctx.fillStyle = shade(color, -0.26);
-  ctx.fill();
-  ctx.stroke();
+  triangle(ctx, x - w, slabTop, x, slabTop + h, x, apex, shade(color, -0.14));
+  triangle(ctx, x + w, slabTop, x, slabTop + h, x, apex, shade(color, -0.34));
 }
 
-// Доминанта: шпиль или купол. Ставится ровно дважды за весь город.
-function crown(ctx, x, y, w, color, seed, roofHeight) {
-  flatRoof(ctx, x, y, w, color);
-  ctx.strokeStyle = shade(color, -0.5);
-  ctx.lineWidth = 1;
-  if (seed % 2 === 0) {
-    ctx.beginPath();
-    ctx.moveTo(x - w * 0.5, y - w * 0.5);
-    ctx.lineTo(x, y - w * 0.5 - roofHeight);
-    ctx.lineTo(x + w * 0.5, y - w * 0.5);
-    ctx.closePath();
-    ctx.fillStyle = shade(color, -0.24);
-    ctx.fill();
-    ctx.stroke();
-  } else {
-    ctx.beginPath();
-    ctx.ellipse(x, y - w * 0.5, w * 0.66, Math.max(w * 0.5, roofHeight), 0, Math.PI, 0);
-    ctx.closePath();
-    ctx.fillStyle = shade(color, -0.24);
-    ctx.fill();
-    ctx.stroke();
-  }
+// Двускатная крыша: конёк идёт по диагонали верхней грани, к зрителю
+// смотрят скат и фронтон. Без неё коробка читается как обычный кубик.
+function gableRoof(ctx, x, y, w, base, rise) {
+  const color = shade(base, ROOF_DARK);
+  const h = w / 2;
+  const west = { x: x - w, y };
+  const north = { x, y: y - h };
+  const east = { x: x + w, y };
+  const south = { x, y: y + h };
+  const ridgeBack = { x: x - w / 2, y: y - h / 2 - rise };
+  const ridgeFront = { x: x + w / 2, y: y + h / 2 - rise };
+
+  ctx.strokeStyle = shade(base, -OUTLINE_DARK);
+  ctx.lineWidth = OUTLINE_WIDTH;
+  ctx.lineJoin = 'round';
+  quad(ctx, north, east, ridgeFront, ridgeBack, shade(color, -0.14));
+  quad(ctx, west, south, ridgeFront, ridgeBack, shade(color, 0.06));
+  triangle(ctx, south.x, south.y, east.x, east.y, ridgeFront.x, ridgeFront.y, shade(color, -0.34));
 }
 
 function quad(ctx, a, b, c, d, fill) {
@@ -540,86 +569,49 @@ function quad(ctx, a, b, c, d, fill) {
   ctx.stroke();
 }
 
-// Окна: ряд на этаж, у завершённого района они горят тёплым светом.
-function windows(ctx, x, y, w, h, color, unit, lit) {
-  const rows = Math.max(1, Math.round(h / (unit * 0.62)));
-  const rw = w * 0.2;
-  ctx.fillStyle = lit ? WINDOW_LIT : shade(color, 0.4);
-  for (let i = 0; i < rows; i += 1) {
-    const wy = y - h * ((i + 0.6) / rows);
-    ctx.beginPath();
-    ctx.ellipse(x - w * 0.48, wy - w * 0.24, rw, rw * 0.72, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(x + w * 0.48, wy - w * 0.24, rw, rw * 0.72, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+function triangle(ctx, ax, ay, bx, by, cx, cy, fill) {
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(bx, by);
+  ctx.lineTo(cx, cy);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.stroke();
 }
 
 // --- озеленение -----------------------------------------------------------
 
-function tree(ctx, x, y, width, height, variant) {
-  drawShadow(ctx, x, y, height, width * 1.3);
-  const trunk = width * 0.16;
-  ctx.fillStyle = WOOD;
-  ctx.fillRect(x - trunk / 2, y - height * 0.5, trunk, height * 0.5);
-  const crownColor = variant % 2 === 0 ? '#5B9750' : '#4C8547';
-  ctx.fillStyle = shade(crownColor, -0.08);
-  ctx.beginPath();
-  ctx.ellipse(x, y - height * 0.68, width * 0.5, height * 0.36, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = shade(crownColor, 0.14);
-  ctx.beginPath();
-  ctx.ellipse(x - width * 0.14, y - height * 0.8, width * 0.28, height * 0.2, 0, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function bush(ctx, x, y, width, height, variant) {
-  drawShadow(ctx, x, y, height, width * 1.2);
-  const crownColor = variant % 2 === 0 ? '#4C8547' : '#5B9750';
-  ctx.fillStyle = shade(crownColor, -0.06);
-  ctx.beginPath();
-  ctx.ellipse(x, y - height * 0.5, width * 0.5, height * 0.6, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = shade(crownColor, 0.12);
-  ctx.beginPath();
-  ctx.ellipse(x - width * 0.12, y - height * 0.66, width * 0.24, height * 0.3, 0, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function lamp(ctx, x, y, width, height) {
-  drawShadow(ctx, x, y, height, width * 3);
-  ctx.strokeStyle = shade(WOOD, -0.3);
-  ctx.lineWidth = Math.max(1.2, width);
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x, y - height);
-  ctx.stroke();
-  ctx.fillStyle = '#E2A238';
-  ctx.beginPath();
-  ctx.arc(x, y - height - width * 0.6, Math.max(1.5, width * 1.1), 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function bridge(ctx, x, y, width, height) {
-  drawShadow(ctx, x, y, height, width);
-  const span = width / 2;
-  ctx.strokeStyle = shade(WOOD, 0.04);
-  ctx.lineWidth = height * 0.34;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x - span, y);
-  ctx.quadraticCurveTo(x, y - height * 1.5, x + span, y);
-  ctx.stroke();
-  ctx.lineWidth = Math.max(1, height * 0.12);
-  ctx.strokeStyle = shade(WOOD, -0.3);
-  for (let i = -2; i <= 2; i += 1) {
-    const t = i / 2.4;
-    const px = x + t * span;
-    const py = y - (1 - t * t) * height;
-    ctx.beginPath();
-    ctx.moveTo(px, py);
-    ctx.lineTo(px, py + height * 0.5);
-    ctx.stroke();
+// Деревья, фонари и кусты — те же кубики, только уже и ниже.
+function paintProp(ctx, kind, x, groundY, unit, seed) {
+  drawShadow(ctx, x, groundY, propHeightUnits(kind) * unit, propWidthUnits(kind) * unit * SHADOW_SPREAD);
+  const half = cubeHalf(unit);
+  const green = CROWN_COLORS[seed % CROWN_COLORS.length];
+  if (kind === 'bush') {
+    stackBlock(ctx, x, groundY, half * BUSH_SCALE, BUSH_SCALE * unit, green, true);
+    return;
   }
+  if (kind === 'lamp') {
+    const top = stackBlock(ctx, x, groundY, half * LAMP_POST_WIDTH, LAMP_POST_HEIGHT * unit, WOOD, false);
+    stackBlock(ctx, x, top, half * LAMP_HEAD_WIDTH, LAMP_HEAD_HEIGHT * unit, LAMP_HEAD_COLOR, true);
+    return;
+  }
+  let level = stackBlock(ctx, x, groundY, half * TRUNK_WIDTH, TRUNK_HEIGHT * unit, WOOD, false);
+  if (kind === 'treeLarge') {
+    for (let i = 0; i < CROWN_LARGE.length; i += 1) {
+      const crown = CROWN_LARGE[i];
+      level = stackBlock(ctx, x, level, half * crown.width, crown.height * unit, green, i === CROWN_LARGE.length - 1);
+    }
+    return;
+  }
+  stackBlock(ctx, x, level, half * CROWN_WIDTH, CROWN_HEIGHT * unit, green, true);
+}
+
+// Кубик заданной ширины и высоты на уровне baseY. Возвращает уровень
+// верхней грани — на него встаёт следующая деталь.
+function stackBlock(ctx, x, baseY, half, height, color, stud) {
+  const top = baseY - height;
+  drawBlock(ctx, x, top, half, color, height / cubeSideHeight(half));
+  if (stud) drawStud(ctx, x, top, half, color);
+  return top;
 }
