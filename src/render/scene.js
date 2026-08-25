@@ -1,7 +1,7 @@
 // Отрисовка кадра целиком. Модуль только читает view — состояние
 // игры он не меняет.
 
-import { drawCube, drawPostBase, drawHole, drawPegStub, drawGhostSlot, SKY_TOP, TABLE, INK, shade } from './iso.js';
+import { drawCube, drawPostBase, drawStuds, SKY_TOP, TABLE, INK, shade } from './iso.js';
 import { drawShadow } from './shadow.js';
 import { getCityCanvas } from './city.js';
 import { slotPosition } from './layout.js';
@@ -10,10 +10,9 @@ import { drawParticles } from '../anim/fx.js';
 const HINT_ALPHA = 0.9;
 const WAVE_HEIGHT = 0.5;
 const WAVE_SPAN = 0.45;
-const HAND_SHADOW_FADE = 0.45;
+const HAND_SHADOW_FADE = 0.6;
 const FLIGHT_SHADOW_FADE = 0.7;
-const GHOST_FADE_STEP = 0.78;
-const GHOST_FADE_MIN = 0.4;
+
 
 export function drawScene(ctx, view) {
   const { layout, fx } = view;
@@ -75,26 +74,17 @@ function drawPosts(ctx, view) {
     let hiddenTop = view.hidden && view.hidden.post === i ? view.hidden.count : 0;
     if (view.hand && view.hand.from === i) hiddenTop += view.hand.count;
     const visible = posts[i].length - hiddenTop;
-    if (visible > 0) {
-      // Тень всей стопки: чем она выше, тем длиннее, мягче и бледнее.
-      drawShadow(ctx, post.x, post.baseY, visible * step + size * 0.5, size * 2, 1, post.scale);
-    }
     for (let slot = 0; slot < visible; slot += 1) {
       const pos = slotPosition(layout, i, slot);
       const wave = waveOffset(view, i, slot, size);
       const squash = landingSquash(view, i, slot);
       drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash);
     }
-    const topY = visible > 0
-      ? slotPosition(layout, i, visible - 1).y - waveOffset(view, i, visible - 1, size)
-      : post.baseY - size * 0.25;
-    if (visible > 0) drawHole(ctx, post.x, topY, size, posts[i][visible - 1]);
-    drawPegStub(ctx, post.x, topY, size);
-    // Свободные места показываются контурами, а не длиной штыря.
-    // Ближний свободный слот — самый заметный: именно туда сядет группа.
-    for (let slot = visible; slot < layout.capacity; slot += 1) {
-      const pos = slotPosition(layout, i, slot);
-      drawGhostSlot(ctx, pos.x, pos.y, size, Math.max(GHOST_FADE_MIN, GHOST_FADE_STEP ** (slot - visible)));
+    // Выступы видны только у верхнего кубика: у остальных верхнюю грань
+    // закрывает следующий кубик.
+    if (visible > 0) {
+      const top = slotPosition(layout, i, visible - 1);
+      drawStuds(ctx, top.x, top.y - waveOffset(view, i, visible - 1, size), size, posts[i][visible - 1]);
     }
     ctx.translate(-dx, 0);
   }
@@ -127,7 +117,7 @@ function drawHintMark(ctx, layout, post, pulse, isSource) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const top = post.baseY - layout.pegHeight * post.scale - size * 0.75;
+  const top = post.baseY - layout.columnHeight * post.scale - size * 0.4;
   const bob = pulse * size * 0.18;
   const w = size * 0.42;
   ctx.fillStyle = INK;
@@ -154,17 +144,16 @@ function drawHand(ctx, view) {
   const size = layout.size * post.scale;
   const baseSlot = view.posts[hand.from].length - hand.count;
   const lift = hand.lift * (size * 1.5);
-  // Тень группы остаётся на земле и слабеет по мере подъёма — так видно,
-  // что группа в воздухе.
-  const airborne = 1 - hand.lift * HAND_SHADOW_FADE;
-  drawShadow(ctx, post.x, post.baseY, baseSlot * layout.step * post.scale + size, size * 2, airborne, airborne * post.scale);
+  // Тень поднятой группы остаётся на земле под своим столбиком и слабеет —
+  // так видно, что группа в воздухе.
+  drawShadow(ctx, post.x, post.baseY, baseSlot * layout.step * post.scale, size * 2, HAND_SHADOW_FADE);
   let topY = 0;
   for (let i = 0; i < hand.count; i += 1) {
     const pos = slotPosition(layout, hand.from, baseSlot + i);
     topY = pos.y - lift;
     drawCube(ctx, post.x + hand.bob, topY, size, hand.color, 1);
   }
-  drawHole(ctx, post.x + hand.bob, topY, size, hand.color);
+  drawStuds(ctx, post.x + hand.bob, topY, size, hand.color);
 }
 
 function drawFlight(ctx, view) {
@@ -173,10 +162,9 @@ function drawFlight(ctx, view) {
   const { layout } = view;
   // Тень летящей группы остаётся на земле под ней — иначе группа
   // выглядит приклеенной к фону.
-  const height = Math.max(0, flight.groundY - flight.y);
-  drawShadow(ctx, flight.x, flight.groundY, height, layout.size * 2, FLIGHT_SHADOW_FADE);
+  drawShadow(ctx, flight.x, flight.groundY, Math.max(0, flight.groundY - flight.y), layout.size * 2, FLIGHT_SHADOW_FADE);
   for (let i = 0; i < flight.count; i += 1) {
     drawCube(ctx, flight.x, flight.y - i * layout.step, layout.size, flight.color, 1);
   }
-  drawHole(ctx, flight.x, flight.y - (flight.count - 1) * layout.step, layout.size, flight.color);
+  drawStuds(ctx, flight.x, flight.y - (flight.count - 1) * layout.step, layout.size, flight.color);
 }

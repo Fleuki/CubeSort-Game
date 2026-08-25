@@ -17,23 +17,24 @@ const RIGHT_DARK = 0.34;
 const STROKE_DARK = 0.5;
 const STROKE_WIDTH = 1.5;
 const SIDE_RATIO = 0.82;
-// Штырь торчит над верхним кубиком на эту долю высоты кубика: короткий
-// толстый шип читается как крепление, длинная спица — как шампур.
-export const PEG_OVERHANG = 0.22;
 // Радиус подставки в долях ширины кубика.
 export const BASE_RADIUS_RATIO = 1.0;
-// Толщина штыря в долях ширины кубика.
-const PEG_WIDTH = 0.16;
-const BASE_TONE = -0.16;
-const PEG_TONE = 0.06;
-// Отверстие под штырь: большая полуось в долях ширины кубика.
-const HOLE_RADIUS = 0.22;
-const HOLE_DARK = -0.55;
+// Подставка светлее тени, иначе низ стопки смазывается в тёмное пятно.
+const BASE_TONE = 0.1;
+const BASE_SHADOW_SPREAD = 1.35;
 // Символ на боковой грани: доля ширины грани.
 const SYMBOL_SCALE = 0.34;
 const SYMBOL_DARK = -0.4;
 const SYMBOL_LIGHT = 0.18;
-const GHOST_LINE = 'rgba(92, 70, 44, 0.16)';
+// Выступы: кубики соединяются друг с другом, как детали конструктора.
+const STUD_RADIUS = 0.13;
+const STUD_HEIGHT = 0.1;
+const STUD_INSET = 0.26;
+const SINGLE_STUD_WIDTH = 56;
+const SINGLE_STUD_RADIUS = 0.2;
+const STUD_TOP_LIGHT = 0.16;
+const STUD_SIDE_DARK = -0.12;
+const STUD_STROKE_DARK = -0.45;
 
 // Символы различают цвета для дальтоников. Живут на боковых гранях:
 // на верхней их перекрывало бы отверстие, да и видно её только у верхнего
@@ -123,6 +124,48 @@ export function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
   drawSymbol(ctx, x + w / 2, faceY, size, -0.5, colorIndex, shade(base, -RIGHT_DARK));
 }
 
+// Выступы на верхней грани. Рисуются только там, где верх виден: у верхнего
+// кубика стопки, у поднятой группы и у одиночного кубика. Внутри стопки
+// верхняя грань закрыта следующим кубиком — и это создаёт ощущение,
+// что детали вставлены друг в друга.
+export function drawStuds(ctx, x, y, size, colorIndex) {
+  const base = PALETTE[colorIndex % PALETTE.length];
+  const cubeWidth = size * 2;
+  const height = cubeSideHeight(size) * STUD_HEIGHT;
+  ctx.strokeStyle = shade(base, STUD_STROKE_DARK);
+  ctx.lineWidth = STROKE_WIDTH;
+  // Четыре мелких выступа на маленьком экране сливаются в кашу.
+  if (cubeWidth < SINGLE_STUD_WIDTH) {
+    stud(ctx, x, y, cubeWidth * SINGLE_STUD_RADIUS, height, base);
+    return;
+  }
+  const radius = cubeWidth * STUD_RADIUS;
+  const offset = 1 - 2 * STUD_INSET;
+  for (let i = 0; i < 4; i += 1) {
+    // Сетка 2x2 лежит в плоскости грани: ромбом, а не квадратом на экране.
+    const u = i < 2 ? offset : -offset;
+    const v = i % 2 === 0 ? offset : -offset;
+    stud(ctx, x + (u - v) * (size / 2), y + (u + v) * (size / 4), radius, height, base);
+  }
+}
+
+function stud(ctx, x, y, rx, height, base) {
+  const ry = rx * 0.5;
+  ctx.fillStyle = shade(base, STUD_SIDE_DARK);
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI);
+  ctx.lineTo(x - rx, y - height);
+  ctx.ellipse(x, y - height, rx, ry, 0, Math.PI, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = shade(base, STUD_TOP_LIGHT);
+  ctx.beginPath();
+  ctx.ellipse(x, y - height, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+}
+
 // Символ наследует наклон грани: skew = 0.5 для левой, -0.5 для правой.
 // Это оттиск, а не наклейка — тёмный контур плюс светлая линия снизу.
 function drawSymbol(ctx, cx, cy, size, skew, colorIndex, faceColor) {
@@ -190,79 +233,18 @@ function symbolPath(ctx, kind, r, dy) {
   }
 }
 
-// Отверстие в верхней грани: кубик надет на штырь, а не стоит рядом с ним.
-export function drawHole(ctx, x, y, size, colorIndex) {
-  const base = PALETTE[colorIndex % PALETTE.length];
-  const rx = size * 2 * HOLE_RADIUS;
-  const ry = rx / 2;
-  ctx.fillStyle = shade(base, HOLE_DARK);
-  ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Светлая дуга по нижнему краю читается как внутренняя стенка.
-  ctx.strokeStyle = shade(base, -0.18);
-  ctx.lineWidth = Math.max(1, size * 0.06);
-  ctx.beginPath();
-  ctx.ellipse(x, y + ry * 0.12, rx * 0.92, ry * 0.92, 0, 0.15 * Math.PI, 0.85 * Math.PI);
-  ctx.stroke();
-}
 
-// Свободное место над стопкой: контур кубика без заливки. Игрок
-// пересчитывает пустые слоты глазами, палка для этого не нужна.
-export function drawGhostSlot(ctx, x, y, size, fade = 1) {
-  const w = size;
-  ctx.save();
-  ctx.globalAlpha = fade;
-  const h = size / 2;
-  const side = cubeSideHeight(size);
-  ctx.strokeStyle = GHOST_LINE;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x, y - h);
-  ctx.lineTo(x + w, y);
-  ctx.lineTo(x, y + h);
-  ctx.lineTo(x - w, y);
-  ctx.closePath();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x - w, y);
-  ctx.lineTo(x - w, y + side);
-  ctx.moveTo(x, y + h);
-  ctx.lineTo(x, y + h + side);
-  ctx.moveTo(x + w, y);
-  ctx.lineTo(x + w, y + side);
-  ctx.stroke();
-  ctx.restore();
-}
 
-// Короткий шип над верхним кубиком. Рисуется после отверстия, поэтому
-// выходит из кубика, а не упирается в него.
-export function drawPegStub(ctx, x, topY, size) {
-  const w = size * 2 * PEG_WIDTH;
-  const height = cubeSideHeight(size) * PEG_OVERHANG;
-  const top = topY - height;
-  ctx.fillStyle = shade(WOOD, PEG_TONE);
-  ctx.beginPath();
-  ctx.roundRect(x - w / 2, top, w, height + w * 0.3, w * 0.35);
-  ctx.fill();
-  ctx.fillStyle = shade(WOOD, PEG_TONE + 0.12);
-  ctx.beginPath();
-  ctx.roundRect(x - w / 2, top, w * 0.42, height + w * 0.2, w * 0.2);
-  ctx.fill();
-  ctx.strokeStyle = shade(WOOD, -0.3);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.ellipse(x, top + w * 0.14, w / 2, w * 0.16, 0, 0, Math.PI * 2);
-  ctx.stroke();
-}
 
-// Подставка: на пару тонов темнее штыря, иначе нижний кубик сливается с ней.
+// Подставка: круглая деревянная площадка. Пустой столбик — это только она.
 export function drawPostBase(ctx, x, baseY, size) {
   const baseRx = size * BASE_RADIUS_RATIO;
   const baseRy = baseRx / 2;
-  drawShadow(ctx, x, baseY, baseRy * 0.9, baseRx * 2);
+  // Пятно шире подставки: иначе ядро тени целиком уходит под неё
+  // и контакт с землёй не читается.
+  drawShadow(ctx, x, baseY, baseRy * 0.9, baseRx * 2 * BASE_SHADOW_SPREAD);
 
-  ctx.fillStyle = shade(WOOD, BASE_TONE - 0.12);
+  ctx.fillStyle = shade(WOOD, BASE_TONE - 0.22);
   ctx.beginPath();
   ctx.ellipse(x, baseY + baseRy * 0.18, baseRx, baseRy, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -270,7 +252,7 @@ export function drawPostBase(ctx, x, baseY, size) {
   ctx.beginPath();
   ctx.ellipse(x, baseY, baseRx, baseRy, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = shade(WOOD, BASE_TONE - 0.16);
+  ctx.strokeStyle = shade(WOOD, BASE_TONE - 0.2);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.ellipse(x, baseY, baseRx * 0.72, baseRy * 0.72, 0, 0, Math.PI * 2);

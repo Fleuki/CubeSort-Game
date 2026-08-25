@@ -5,12 +5,16 @@ import { PALETTE, WOOD, TABLE, shade } from './iso.js';
 import { drawShadow, drawShadowAlong } from './shadow.js';
 
 const DISTRICT_SIZE = 10;
+// Каждый собранный столбик ставит постройку В ЦВЕТ столбика, поэтому
+// в наборе только те виды, которые цвет показывают. Деревья и фонари —
+// озеленение: они появляются сами по мере роста города и цвет не съедают.
 const DISTRICT_KINDS = [
-  ['house', 'house', 'house', 'park'],
-  ['house', 'tower', 'tower', 'lamp'],
-  ['tower', 'tower', 'bridge', 'park'],
-  ['tower', 'house', 'park', 'lamp']
+  ['house', 'house', 'house', 'tower'],
+  ['house', 'tower', 'tower', 'house'],
+  ['tower', 'house', 'bridge', 'tower'],
+  ['tower', 'tower', 'house', 'bridge']
 ];
+const DECOR_EVERY = 5;
 
 // Площадка: на пустом городе занимает 60% ширины зоны и растёт
 // с застройкой, но не бесконечно.
@@ -36,8 +40,9 @@ export function createCity(buildings = []) {
 export function prepareBuilding(city, colorIndex, level) {
   const district = Math.floor((level - 1) / DISTRICT_SIZE) % DISTRICT_KINDS.length;
   const pool = DISTRICT_KINDS[district];
-  const index = city.buildings.length;
-  const building = { index, color: colorIndex, kind: pool[index % pool.length], seed: (index * 2654435761) >>> 0 };
+  const order = city.buildings.length;
+  const index = slotForBuilding(order);
+  const building = { index, color: colorIndex, kind: pool[order % pool.length], seed: (index * 2654435761) >>> 0 };
   city.pending = building;
   city.dirty = true;
   return building;
@@ -62,7 +67,26 @@ export function resetCity(city) {
 }
 
 function layoutCount(city) {
-  return city.buildings.length + (city.pending ? 1 : 0);
+  const last = city.pending ? city.pending.index : lastSlot(city);
+  return last + 1;
+}
+
+function lastSlot(city) {
+  let max = -1;
+  for (let i = 0; i < city.buildings.length; i += 1) {
+    if (city.buildings[i].index > max) max = city.buildings[i].index;
+  }
+  return max;
+}
+
+// Каждая DECOR_EVERY-я клетка спирали отдана под озеленение, постройки
+// её перешагивают.
+function isDecorSlot(slot) {
+  return slot % DECOR_EVERY === DECOR_EVERY - 1;
+}
+
+function slotForBuilding(order) {
+  return order + Math.floor(order / (DECOR_EVERY - 1));
 }
 
 function plate(rect, count) {
@@ -195,6 +219,13 @@ function sceneItems(rect, city) {
     const point = buildingPoint(rect, count, building);
     items.push({ kind: building.kind, building, point, groundY: point.y });
   }
+  // Озеленение занятых кварталов: деревья и фонари между домами.
+  for (let slot = DECOR_EVERY - 1; slot < count; slot += DECOR_EVERY) {
+    if (!isDecorSlot(slot)) continue;
+    const point = buildingPoint(rect, count, { index: slot, seed: (slot * 40503) >>> 0 });
+    const isLamp = Math.floor(slot / DECOR_EVERY) % 3 === 2;
+    items.push({ kind: isLamp ? 'lamp' : 'tree', point, groundY: point.y, variant: slot % 2 });
+  }
   items.sort((a, b) => a.groundY - b.groundY);
   return items;
 }
@@ -205,8 +236,11 @@ function paintItem(ctx, item, appear) {
     return;
   }
   const rise = (1 - appear) * item.point.scale * 2.2;
-  if (item.kind === 'well') well(ctx, item.point.x, item.point.y + rise, item.point.scale);
-  else tree(ctx, item.point.x, item.point.y + rise, item.point.scale, item.variant);
+  const x = item.point.x;
+  const y = item.point.y + rise;
+  if (item.kind === 'well') well(ctx, x, y, item.point.scale);
+  else if (item.kind === 'lamp') lamp(ctx, x, y, item.point.scale * 0.8);
+  else tree(ctx, x, y, item.point.scale * 0.68, item.variant);
 }
 
 // --- участок --------------------------------------------------------------
@@ -279,7 +313,7 @@ function drawFence(ctx, disc) {
 }
 
 function well(ctx, x, y, scale) {
-  drawShadow(ctx, x, y, scale * 0.86, scale * 0.68);
+  drawShadow(ctx, x, y - scale * 0.08, scale * 0.86, scale * 0.9);
   ctx.fillStyle = shade(WOOD, -0.35);
   ctx.beginPath();
   ctx.ellipse(x, y - scale * 0.1, scale * 0.34, scale * 0.17, 0, 0, Math.PI * 2);
@@ -341,7 +375,9 @@ function paintBuilding(ctx, building, point, appear) {
 // Изометрическая коробка: (x, y) — центр нижней грани на столе.
 function prism(ctx, x, y, w, h, color) {
   const half = w / 2;
-  drawShadow(ctx, x, y, h + w * 0.5, w * 2);
+  // Точка касания — центр опоры коробки, а не её передний угол: иначе
+  // пятно уходит под саму коробку и дом снова выглядит парящим.
+  drawShadow(ctx, x, y - half, h, w * 2.1);
   ctx.strokeStyle = shade(color, -0.5);
   ctx.lineWidth = 1.2;
 
@@ -430,7 +466,7 @@ function windows(ctx, x, y, w, h, color, rows) {
 }
 
 function tree(ctx, x, y, scale, variant) {
-  drawShadow(ctx, x, y, scale * 1.05, scale * 0.72);
+  drawShadow(ctx, x, y, scale * 1.05, scale * 0.9);
   ctx.fillStyle = WOOD;
   ctx.fillRect(x - scale * 0.07, y - scale * 0.55, scale * 0.14, scale * 0.55);
   const crown = variant % 2 === 0 ? '#5B9750' : '#4C8547';
@@ -459,7 +495,7 @@ function lamp(ctx, x, y, scale) {
 }
 
 function bridge(ctx, x, y, scale, color) {
-  drawShadow(ctx, x, y, scale * 0.62, scale * 1.8);
+  drawShadow(ctx, x, y - scale * 0.1, scale * 0.62, scale * 1.9);
   ctx.strokeStyle = shade(color, -0.1);
   ctx.lineWidth = scale * 0.22;
   ctx.lineCap = 'round';

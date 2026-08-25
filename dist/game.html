@@ -901,114 +901,100 @@ function clearHistory(history) {
 return { createHistory, pushHistory, popHistory, canUndo, clearHistory };
 })();
 const __src_render_shadow_js = (() => {
-// Единственная система теней сцены: столбики, кубики, город и декорации
-// ходят через неё. Тень строится от точки касания земли, поэтому между
-// объектом и его тенью нет зазора.
+// Единственная система теней сцены. Тень контактная: небольшое мягкое
+// пятно почти строго под основанием объекта. Направленные тени
+// переменной длины в этом стиле не работают — читаются как грязь.
 //
-// Свет — сверху-слева, тени падают вправо-вниз. Чем выше объект, тем
-// длиннее, мягче и бледнее тень: именно это отличает объём от аппликации.
+// Размер пятна задаёт ширина основания, высота влияет только на плотность.
+// Цвет тёплый: холодная тень на песочном столе выглядит пятном грязи.
 
-const COLOR = '92, 70, 44';
-const OFFSET_X = 0.42;
-const OFFSET_Y = 0.16;
-const RADIUS_OF_WIDTH = 0.62;
-const RADIUS_OF_HEIGHT = 0.1;
-const RADIUS_ASPECT = 0.42;
-const ALPHA_BASE = 0.26;
-const ALPHA_FALLOFF = 0.0007;
-const ALPHA_MIN = 0.1;
-const BLUR_BASE = 3;
-const BLUR_OF_HEIGHT = 0.045;
-const SOLID_CORE = 0.65;
-const CORE_MIN = 0.3;
-const CONTACT_OVERLAP = 0.3;
-const SPRITE_LIMIT = 48;
-const SPRITE_STEP = 2;
-const ALPHA_STEP = 0.02;
+const COLOR = '112, 84, 52';
+const OFFSET_X = 0.06;
+const OFFSET_Y = 0.02;
+const CORE_RADIUS = 0.52;
+const CORE_ALPHA = 0.2;
+const HALO_RADIUS = 0.92;
+const HALO_ALPHA = 0.07;
+const ASPECT = 0.38;
+const HEIGHT_FADE = 0.0006;
+const HEIGHT_FADE_MIN = 0.65;
+const CORE_SOLID = 0.55;
+const HALO_SOLID = 0.2;
+const SPRITE_LIMIT = 24;
+const ALPHA_STEP = 0.01;
+const SPRITE_SIZE = 96;
 
-// Готовые спрайты теней: за кадр их десятки, а создавать градиент
-// на каждую — это аллокации в цикле отрисовки.
+// Спрайты тени готовятся один раз: за кадр их десятки, а создавать
+// градиент на каждую — это аллокации в цикле отрисовки.
 const sprites = new Map();
 
-function shadowMetrics(height, width) {
-  const h = Math.max(0, height);
-  const rx = width * RADIUS_OF_WIDTH + h * RADIUS_OF_HEIGHT;
-  // Ближний край эллипса обязан перекрывать основание: у очень высоких
-  // объектов смещение обгоняет радиус, и тень отрывается.
-  const offsetX = Math.min(h * OFFSET_X, rx - width * CONTACT_OVERLAP);
-  const blur = BLUR_BASE + h * BLUR_OF_HEIGHT;
-  return {
-    offsetX,
-    offsetY: h * OFFSET_Y,
-    rx,
-    ry: rx * RADIUS_ASPECT,
-    alpha: Math.max(ALPHA_MIN, Math.min(ALPHA_BASE, ALPHA_BASE - h * ALPHA_FALLOFF)),
-    core: Math.max(CORE_MIN, Math.min(SOLID_CORE, 1 - blur / (rx * 0.6)))
-  };
+// Высота объекта делает тень только бледнее — размер её не трогает.
+function shadowFactor(height, fade) {
+  return Math.max(HEIGHT_FADE_MIN, Math.min(1, 1 - height * HEIGHT_FADE)) * fade;
 }
 
-// (x, y) — точка касания земли. height — высота объекта над этой точкой,
-// width — ширина его основания.
-function drawShadow(ctx, x, y, height, width, fade = 1, squeeze = 1) {
-  if (fade <= 0.02 || width <= 0) return;
-  const m = shadowMetrics(height, width);
-  const rx = m.rx * squeeze;
-  const ry = m.ry * squeeze;
-  const alpha = m.alpha * fade;
-  if (rx < 1 || alpha < 0.01) return;
-  // Спрайт круглый, эллипс получается растяжением при отрисовке —
-  // поэтому один спрайт обслуживает любую пропорцию.
-  const sprite = getSprite(rx, alpha, m.core);
-  ctx.drawImage(sprite.canvas, x + m.offsetX * squeeze - rx, y + m.offsetY * squeeze - ry, rx * 2, ry * 2);
+// (x, y) — точка касания земли, width — ширина основания,
+// height — высота объекта над этой точкой.
+function drawShadow(ctx, x, y, height, width, fade = 1) {
+  if (width <= 0 || fade <= 0.02) return;
+  const factor = shadowFactor(height, fade);
+  if (factor * CORE_ALPHA < 0.01) return;
+  const cx = x + width * OFFSET_X;
+  const cy = y + width * OFFSET_Y;
+  blot(ctx, cx, cy, width * HALO_RADIUS, HALO_ALPHA * factor, HALO_SOLID);
+  blot(ctx, cx, cy, width * CORE_RADIUS, CORE_ALPHA * factor, CORE_SOLID);
 }
 
-function getSprite(rx, alpha, core) {
-  const radius = Math.max(2, Math.round(rx / SPRITE_STEP) * SPRITE_STEP);
+function blot(ctx, x, y, rx, alpha, solid) {
+  if (rx < 0.5) return;
+  const ry = rx * ASPECT;
+  const sprite = getSprite(alpha, solid);
+  ctx.drawImage(sprite, x - rx, y - ry, rx * 2, ry * 2);
+}
+
+function getSprite(alpha, solid) {
   const quantAlpha = Math.max(ALPHA_STEP, Math.round(alpha / ALPHA_STEP) * ALPHA_STEP);
-  const quantCore = Math.round(core * 10) / 10;
-  const key = `${radius}|${quantAlpha}|${quantCore}`;
+  const key = `${quantAlpha}|${solid}`;
   const cached = sprites.get(key);
   if (cached) return cached;
   if (sprites.size > SPRITE_LIMIT) sprites.clear();
 
-  const size = Math.ceil(radius * 2);
   const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = SPRITE_SIZE;
+  canvas.height = SPRITE_SIZE;
   const ctx = canvas.getContext('2d');
+  const radius = SPRITE_SIZE / 2;
   // Мягкий край даёт радиальный градиент: ctx.filter = 'blur()' на
-  // бюджетных Android стоит дороже всей отрисовки кадра.
+  // бюджетных Android стоит дороже всей остальной отрисовки кадра.
   const gradient = ctx.createRadialGradient(radius, radius, 0, radius, radius, radius);
   gradient.addColorStop(0, `rgba(${COLOR}, ${quantAlpha})`);
-  gradient.addColorStop(quantCore, `rgba(${COLOR}, ${quantAlpha})`);
+  gradient.addColorStop(solid, `rgba(${COLOR}, ${quantAlpha})`);
   gradient.addColorStop(1, `rgba(${COLOR}, 0)`);
   ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.arc(radius, radius, radius, 0, Math.PI * 2);
   ctx.fill();
 
-  const sprite = { canvas, radius };
-  sprites.set(key, sprite);
-  return sprite;
+  sprites.set(key, canvas);
+  return canvas;
 }
 
 // Одна вытянутая тень на всю дугу: у забора на каждую секцию своей тени
 // быть не должно, иначе получается пунктир из пятен.
 function drawShadowAlong(ctx, points, height, width) {
   if (points.length < 2) return;
-  const m = shadowMetrics(height, width);
+  const factor = shadowFactor(height, 1);
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   for (let pass = 0; pass < 2; pass += 1) {
-    // Первый проход — мягкое гало, второй — плотное ядро.
-    const spread = pass === 0 ? 2.2 : 1;
-    ctx.strokeStyle = `rgba(${COLOR}, ${m.alpha * (pass === 0 ? 0.45 : 1)})`;
-    ctx.lineWidth = Math.max(1, m.ry * spread);
+    const halo = pass === 0;
+    ctx.strokeStyle = `rgba(${COLOR}, ${(halo ? HALO_ALPHA : CORE_ALPHA) * factor})`;
+    ctx.lineWidth = Math.max(1, width * (halo ? HALO_RADIUS * 2 : CORE_RADIUS * 2) * ASPECT);
     ctx.beginPath();
     for (let i = 0; i < points.length; i += 1) {
-      const px = points[i].x + m.offsetX;
-      const py = points[i].y + m.offsetY;
+      const px = points[i].x + width * OFFSET_X;
+      const py = points[i].y + width * OFFSET_Y;
       if (i === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     }
@@ -1017,7 +1003,7 @@ function drawShadowAlong(ctx, points, height, width) {
   ctx.restore();
 }
 
-return { shadowMetrics, drawShadow, drawShadowAlong };
+return { shadowFactor, drawShadow, drawShadowAlong };
 })();
 const __src_render_iso_js = (() => {
 // Изометрия 2:1 и отрисовка деревянных деталей. Модуль только рисует,
@@ -1039,23 +1025,24 @@ const RIGHT_DARK = 0.34;
 const STROKE_DARK = 0.5;
 const STROKE_WIDTH = 1.5;
 const SIDE_RATIO = 0.82;
-// Штырь торчит над верхним кубиком на эту долю высоты кубика: короткий
-// толстый шип читается как крепление, длинная спица — как шампур.
-const PEG_OVERHANG = 0.22;
 // Радиус подставки в долях ширины кубика.
 const BASE_RADIUS_RATIO = 1.0;
-// Толщина штыря в долях ширины кубика.
-const PEG_WIDTH = 0.16;
-const BASE_TONE = -0.16;
-const PEG_TONE = 0.06;
-// Отверстие под штырь: большая полуось в долях ширины кубика.
-const HOLE_RADIUS = 0.22;
-const HOLE_DARK = -0.55;
+// Подставка светлее тени, иначе низ стопки смазывается в тёмное пятно.
+const BASE_TONE = 0.1;
+const BASE_SHADOW_SPREAD = 1.35;
 // Символ на боковой грани: доля ширины грани.
 const SYMBOL_SCALE = 0.34;
 const SYMBOL_DARK = -0.4;
 const SYMBOL_LIGHT = 0.18;
-const GHOST_LINE = 'rgba(92, 70, 44, 0.16)';
+// Выступы: кубики соединяются друг с другом, как детали конструктора.
+const STUD_RADIUS = 0.13;
+const STUD_HEIGHT = 0.1;
+const STUD_INSET = 0.26;
+const SINGLE_STUD_WIDTH = 56;
+const SINGLE_STUD_RADIUS = 0.2;
+const STUD_TOP_LIGHT = 0.16;
+const STUD_SIDE_DARK = -0.12;
+const STUD_STROKE_DARK = -0.45;
 
 // Символы различают цвета для дальтоников. Живут на боковых гранях:
 // на верхней их перекрывало бы отверстие, да и видно её только у верхнего
@@ -1145,6 +1132,48 @@ function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
   drawSymbol(ctx, x + w / 2, faceY, size, -0.5, colorIndex, shade(base, -RIGHT_DARK));
 }
 
+// Выступы на верхней грани. Рисуются только там, где верх виден: у верхнего
+// кубика стопки, у поднятой группы и у одиночного кубика. Внутри стопки
+// верхняя грань закрыта следующим кубиком — и это создаёт ощущение,
+// что детали вставлены друг в друга.
+function drawStuds(ctx, x, y, size, colorIndex) {
+  const base = PALETTE[colorIndex % PALETTE.length];
+  const cubeWidth = size * 2;
+  const height = cubeSideHeight(size) * STUD_HEIGHT;
+  ctx.strokeStyle = shade(base, STUD_STROKE_DARK);
+  ctx.lineWidth = STROKE_WIDTH;
+  // Четыре мелких выступа на маленьком экране сливаются в кашу.
+  if (cubeWidth < SINGLE_STUD_WIDTH) {
+    stud(ctx, x, y, cubeWidth * SINGLE_STUD_RADIUS, height, base);
+    return;
+  }
+  const radius = cubeWidth * STUD_RADIUS;
+  const offset = 1 - 2 * STUD_INSET;
+  for (let i = 0; i < 4; i += 1) {
+    // Сетка 2x2 лежит в плоскости грани: ромбом, а не квадратом на экране.
+    const u = i < 2 ? offset : -offset;
+    const v = i % 2 === 0 ? offset : -offset;
+    stud(ctx, x + (u - v) * (size / 2), y + (u + v) * (size / 4), radius, height, base);
+  }
+}
+
+function stud(ctx, x, y, rx, height, base) {
+  const ry = rx * 0.5;
+  ctx.fillStyle = shade(base, STUD_SIDE_DARK);
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI);
+  ctx.lineTo(x - rx, y - height);
+  ctx.ellipse(x, y - height, rx, ry, 0, Math.PI, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = shade(base, STUD_TOP_LIGHT);
+  ctx.beginPath();
+  ctx.ellipse(x, y - height, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+}
+
 // Символ наследует наклон грани: skew = 0.5 для левой, -0.5 для правой.
 // Это оттиск, а не наклейка — тёмный контур плюс светлая линия снизу.
 function drawSymbol(ctx, cx, cy, size, skew, colorIndex, faceColor) {
@@ -1212,79 +1241,18 @@ function symbolPath(ctx, kind, r, dy) {
   }
 }
 
-// Отверстие в верхней грани: кубик надет на штырь, а не стоит рядом с ним.
-function drawHole(ctx, x, y, size, colorIndex) {
-  const base = PALETTE[colorIndex % PALETTE.length];
-  const rx = size * 2 * HOLE_RADIUS;
-  const ry = rx / 2;
-  ctx.fillStyle = shade(base, HOLE_DARK);
-  ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Светлая дуга по нижнему краю читается как внутренняя стенка.
-  ctx.strokeStyle = shade(base, -0.18);
-  ctx.lineWidth = Math.max(1, size * 0.06);
-  ctx.beginPath();
-  ctx.ellipse(x, y + ry * 0.12, rx * 0.92, ry * 0.92, 0, 0.15 * Math.PI, 0.85 * Math.PI);
-  ctx.stroke();
-}
 
-// Свободное место над стопкой: контур кубика без заливки. Игрок
-// пересчитывает пустые слоты глазами, палка для этого не нужна.
-function drawGhostSlot(ctx, x, y, size, fade = 1) {
-  const w = size;
-  ctx.save();
-  ctx.globalAlpha = fade;
-  const h = size / 2;
-  const side = cubeSideHeight(size);
-  ctx.strokeStyle = GHOST_LINE;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x, y - h);
-  ctx.lineTo(x + w, y);
-  ctx.lineTo(x, y + h);
-  ctx.lineTo(x - w, y);
-  ctx.closePath();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x - w, y);
-  ctx.lineTo(x - w, y + side);
-  ctx.moveTo(x, y + h);
-  ctx.lineTo(x, y + h + side);
-  ctx.moveTo(x + w, y);
-  ctx.lineTo(x + w, y + side);
-  ctx.stroke();
-  ctx.restore();
-}
 
-// Короткий шип над верхним кубиком. Рисуется после отверстия, поэтому
-// выходит из кубика, а не упирается в него.
-function drawPegStub(ctx, x, topY, size) {
-  const w = size * 2 * PEG_WIDTH;
-  const height = cubeSideHeight(size) * PEG_OVERHANG;
-  const top = topY - height;
-  ctx.fillStyle = shade(WOOD, PEG_TONE);
-  ctx.beginPath();
-  ctx.roundRect(x - w / 2, top, w, height + w * 0.3, w * 0.35);
-  ctx.fill();
-  ctx.fillStyle = shade(WOOD, PEG_TONE + 0.12);
-  ctx.beginPath();
-  ctx.roundRect(x - w / 2, top, w * 0.42, height + w * 0.2, w * 0.2);
-  ctx.fill();
-  ctx.strokeStyle = shade(WOOD, -0.3);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.ellipse(x, top + w * 0.14, w / 2, w * 0.16, 0, 0, Math.PI * 2);
-  ctx.stroke();
-}
 
-// Подставка: на пару тонов темнее штыря, иначе нижний кубик сливается с ней.
+// Подставка: круглая деревянная площадка. Пустой столбик — это только она.
 function drawPostBase(ctx, x, baseY, size) {
   const baseRx = size * BASE_RADIUS_RATIO;
   const baseRy = baseRx / 2;
-  drawShadow(ctx, x, baseY, baseRy * 0.9, baseRx * 2);
+  // Пятно шире подставки: иначе ядро тени целиком уходит под неё
+  // и контакт с землёй не читается.
+  drawShadow(ctx, x, baseY, baseRy * 0.9, baseRx * 2 * BASE_SHADOW_SPREAD);
 
-  ctx.fillStyle = shade(WOOD, BASE_TONE - 0.12);
+  ctx.fillStyle = shade(WOOD, BASE_TONE - 0.22);
   ctx.beginPath();
   ctx.ellipse(x, baseY + baseRy * 0.18, baseRx, baseRy, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -1292,19 +1260,19 @@ function drawPostBase(ctx, x, baseY, size) {
   ctx.beginPath();
   ctx.ellipse(x, baseY, baseRx, baseRy, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = shade(WOOD, BASE_TONE - 0.16);
+  ctx.strokeStyle = shade(WOOD, BASE_TONE - 0.2);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.ellipse(x, baseY, baseRx * 0.72, baseRy * 0.72, 0, 0, Math.PI * 2);
   ctx.stroke();
 }
 
-return { PALETTE, SKY_TOP, TABLE, WOOD, WOOD_DARK, INK, PEG_OVERHANG, BASE_RADIUS_RATIO, shade, cubeSideHeight, drawCube, drawHole, drawGhostSlot, drawPegStub, drawPostBase };
+return { PALETTE, SKY_TOP, TABLE, WOOD, WOOD_DARK, INK, BASE_RADIUS_RATIO, shade, cubeSideHeight, drawCube, drawStuds, drawPostBase };
 })();
 const __src_render_layout_js = (() => {
 // Расчёт позиций под размер экрана. Ничего не рисует — только числа.
 
-const { cubeSideHeight, PEG_OVERHANG, BASE_RADIUS_RATIO } = __src_render_iso_js;
+const { cubeSideHeight, BASE_RADIUS_RATIO } = __src_render_iso_js;
 
 // Доли доступной высоты (без полос HUD). Поле — герой экрана,
 // поэтому ему отдано больше половины.
@@ -1325,7 +1293,7 @@ const FIELD_USABLE = 0.8;
 const STACK_ALLOWANCE = 1.6;
 const ROW_GAP_SHARE = 0.05;
 const SINGLE_ROW_LIMIT = 5;
-const HIT_PADDING = 0.2;
+const HIT_WIDTH = 1.2;
 // Задний ряд чуть меньше переднего — иначе два ряда читаются как таблица.
 const BACK_ROW_SCALE = 0.94;
 
@@ -1347,14 +1315,12 @@ function computeLayout(width, height, postCount, capacity) {
   const cubeWidth = fitCubeWidth(width, perRow, rowHeight, capacity);
   const size = cubeWidth / 2;
   const step = cubeSideHeight(size);
-  const stackHeight = capacity * step + size * 0.5;
-  // Штырь торчит над верхней гранью полной стопки ровно на PEG_OVERHANG
-  // высоты кубика — поэтому в высоту входит и половина верхнего ромба.
-  const pegHeight = (capacity + PEG_OVERHANG) * step + size * 0.25;
+  // Полная колонка: вместимость кубиков плюс половина верхнего ромба.
+  const columnHeight = capacity * step + size * 0.5;
   // Ряды стоят единым блоком по центру поля: при вместимости 3 стопки
   // низкие, и прижимать их к краю — значит рвать экран пополам.
   const baseRadiusY = size * BASE_RADIUS_RATIO * 0.5;
-  const blockHeight = pegHeight + baseRadiusY * 2;
+  const blockHeight = columnHeight + baseRadiusY * 2;
   const groupHeight = rows * blockHeight + (rows - 1) * rowGap;
   const groupTop = fieldTop + Math.max(0, (fieldHeight - groupHeight) / 2);
 
@@ -1371,7 +1337,7 @@ function computeLayout(width, height, postCount, capacity) {
     posts.push({
       index: i,
       x: startX + inRow * spacing,
-      baseY: rowTop + pegHeight * scale,
+      baseY: rowTop + columnHeight * scale,
       row,
       scale
     });
@@ -1387,8 +1353,7 @@ function computeLayout(width, height, postCount, capacity) {
     size,
     cubeWidth,
     step,
-    stackHeight,
-    pegHeight,
+    columnHeight,
     spacing,
     capacity
   };
@@ -1414,13 +1379,15 @@ function fitCubeWidth(width, perRow, rowHeight, capacity) {
   return Math.max(MIN_CUBE_WIDTH, Math.min(MAX_CUBE_WIDTH, fitted));
 }
 
-// Хитбокс шире визуального штыря на 20% с каждой стороны — пальцу нужен запас.
+// Штыря больше нет, целиться в тонкий блин подставки невозможно, поэтому
+// область тапа — вся колонка над подставкой, шире её в HIT_WIDTH раз.
 function hitTest(layout, px, py) {
   for (let i = 0; i < layout.posts.length; i += 1) {
     const post = layout.posts[i];
-    const half = layout.size * post.scale * (1 + HIT_PADDING);
-    const top = post.baseY - (layout.pegHeight + layout.size * 0.5) * post.scale;
-    const bottom = post.baseY + layout.size * post.scale * 0.7;
+    const baseWidth = layout.size * post.scale * BASE_RADIUS_RATIO * 2;
+    const half = (baseWidth * HIT_WIDTH) / 2;
+    const top = post.baseY - layout.columnHeight * post.scale;
+    const bottom = post.baseY + layout.size * post.scale * BASE_RADIUS_RATIO * 0.5;
     if (px >= post.x - half && px <= post.x + half && py >= top && py <= bottom) return i;
   }
   return -1;
@@ -1446,12 +1413,16 @@ const { PALETTE, WOOD, TABLE, shade } = __src_render_iso_js;
 const { drawShadow, drawShadowAlong } = __src_render_shadow_js;
 
 const DISTRICT_SIZE = 10;
+// Каждый собранный столбик ставит постройку В ЦВЕТ столбика, поэтому
+// в наборе только те виды, которые цвет показывают. Деревья и фонари —
+// озеленение: они появляются сами по мере роста города и цвет не съедают.
 const DISTRICT_KINDS = [
-  ['house', 'house', 'house', 'park'],
-  ['house', 'tower', 'tower', 'lamp'],
-  ['tower', 'tower', 'bridge', 'park'],
-  ['tower', 'house', 'park', 'lamp']
+  ['house', 'house', 'house', 'tower'],
+  ['house', 'tower', 'tower', 'house'],
+  ['tower', 'house', 'bridge', 'tower'],
+  ['tower', 'tower', 'house', 'bridge']
 ];
+const DECOR_EVERY = 5;
 
 // Площадка: на пустом городе занимает 60% ширины зоны и растёт
 // с застройкой, но не бесконечно.
@@ -1477,8 +1448,9 @@ function createCity(buildings = []) {
 function prepareBuilding(city, colorIndex, level) {
   const district = Math.floor((level - 1) / DISTRICT_SIZE) % DISTRICT_KINDS.length;
   const pool = DISTRICT_KINDS[district];
-  const index = city.buildings.length;
-  const building = { index, color: colorIndex, kind: pool[index % pool.length], seed: (index * 2654435761) >>> 0 };
+  const order = city.buildings.length;
+  const index = slotForBuilding(order);
+  const building = { index, color: colorIndex, kind: pool[order % pool.length], seed: (index * 2654435761) >>> 0 };
   city.pending = building;
   city.dirty = true;
   return building;
@@ -1503,7 +1475,26 @@ function resetCity(city) {
 }
 
 function layoutCount(city) {
-  return city.buildings.length + (city.pending ? 1 : 0);
+  const last = city.pending ? city.pending.index : lastSlot(city);
+  return last + 1;
+}
+
+function lastSlot(city) {
+  let max = -1;
+  for (let i = 0; i < city.buildings.length; i += 1) {
+    if (city.buildings[i].index > max) max = city.buildings[i].index;
+  }
+  return max;
+}
+
+// Каждая DECOR_EVERY-я клетка спирали отдана под озеленение, постройки
+// её перешагивают.
+function isDecorSlot(slot) {
+  return slot % DECOR_EVERY === DECOR_EVERY - 1;
+}
+
+function slotForBuilding(order) {
+  return order + Math.floor(order / (DECOR_EVERY - 1));
 }
 
 function plate(rect, count) {
@@ -1636,6 +1627,13 @@ function sceneItems(rect, city) {
     const point = buildingPoint(rect, count, building);
     items.push({ kind: building.kind, building, point, groundY: point.y });
   }
+  // Озеленение занятых кварталов: деревья и фонари между домами.
+  for (let slot = DECOR_EVERY - 1; slot < count; slot += DECOR_EVERY) {
+    if (!isDecorSlot(slot)) continue;
+    const point = buildingPoint(rect, count, { index: slot, seed: (slot * 40503) >>> 0 });
+    const isLamp = Math.floor(slot / DECOR_EVERY) % 3 === 2;
+    items.push({ kind: isLamp ? 'lamp' : 'tree', point, groundY: point.y, variant: slot % 2 });
+  }
   items.sort((a, b) => a.groundY - b.groundY);
   return items;
 }
@@ -1646,8 +1644,11 @@ function paintItem(ctx, item, appear) {
     return;
   }
   const rise = (1 - appear) * item.point.scale * 2.2;
-  if (item.kind === 'well') well(ctx, item.point.x, item.point.y + rise, item.point.scale);
-  else tree(ctx, item.point.x, item.point.y + rise, item.point.scale, item.variant);
+  const x = item.point.x;
+  const y = item.point.y + rise;
+  if (item.kind === 'well') well(ctx, x, y, item.point.scale);
+  else if (item.kind === 'lamp') lamp(ctx, x, y, item.point.scale * 0.8);
+  else tree(ctx, x, y, item.point.scale * 0.68, item.variant);
 }
 
 // --- участок --------------------------------------------------------------
@@ -1720,7 +1721,7 @@ function drawFence(ctx, disc) {
 }
 
 function well(ctx, x, y, scale) {
-  drawShadow(ctx, x, y, scale * 0.86, scale * 0.68);
+  drawShadow(ctx, x, y - scale * 0.08, scale * 0.86, scale * 0.9);
   ctx.fillStyle = shade(WOOD, -0.35);
   ctx.beginPath();
   ctx.ellipse(x, y - scale * 0.1, scale * 0.34, scale * 0.17, 0, 0, Math.PI * 2);
@@ -1782,7 +1783,9 @@ function paintBuilding(ctx, building, point, appear) {
 // Изометрическая коробка: (x, y) — центр нижней грани на столе.
 function prism(ctx, x, y, w, h, color) {
   const half = w / 2;
-  drawShadow(ctx, x, y, h + w * 0.5, w * 2);
+  // Точка касания — центр опоры коробки, а не её передний угол: иначе
+  // пятно уходит под саму коробку и дом снова выглядит парящим.
+  drawShadow(ctx, x, y - half, h, w * 2.1);
   ctx.strokeStyle = shade(color, -0.5);
   ctx.lineWidth = 1.2;
 
@@ -1871,7 +1874,7 @@ function windows(ctx, x, y, w, h, color, rows) {
 }
 
 function tree(ctx, x, y, scale, variant) {
-  drawShadow(ctx, x, y, scale * 1.05, scale * 0.72);
+  drawShadow(ctx, x, y, scale * 1.05, scale * 0.9);
   ctx.fillStyle = WOOD;
   ctx.fillRect(x - scale * 0.07, y - scale * 0.55, scale * 0.14, scale * 0.55);
   const crown = variant % 2 === 0 ? '#5B9750' : '#4C8547';
@@ -1900,7 +1903,7 @@ function lamp(ctx, x, y, scale) {
 }
 
 function bridge(ctx, x, y, scale, color) {
-  drawShadow(ctx, x, y, scale * 0.62, scale * 1.8);
+  drawShadow(ctx, x, y - scale * 0.1, scale * 0.62, scale * 1.9);
   ctx.strokeStyle = shade(color, -0.1);
   ctx.lineWidth = scale * 0.22;
   ctx.lineCap = 'round';
@@ -2103,7 +2106,7 @@ const __src_render_scene_js = (() => {
 // Отрисовка кадра целиком. Модуль только читает view — состояние
 // игры он не меняет.
 
-const { drawCube, drawPostBase, drawHole, drawPegStub, drawGhostSlot, SKY_TOP, TABLE, INK, shade } = __src_render_iso_js;
+const { drawCube, drawPostBase, drawStuds, SKY_TOP, TABLE, INK, shade } = __src_render_iso_js;
 const { drawShadow } = __src_render_shadow_js;
 const { getCityCanvas } = __src_render_city_js;
 const { slotPosition } = __src_render_layout_js;
@@ -2112,10 +2115,9 @@ const { drawParticles } = __src_anim_fx_js;
 const HINT_ALPHA = 0.9;
 const WAVE_HEIGHT = 0.5;
 const WAVE_SPAN = 0.45;
-const HAND_SHADOW_FADE = 0.45;
+const HAND_SHADOW_FADE = 0.6;
 const FLIGHT_SHADOW_FADE = 0.7;
-const GHOST_FADE_STEP = 0.78;
-const GHOST_FADE_MIN = 0.4;
+
 
 function drawScene(ctx, view) {
   const { layout, fx } = view;
@@ -2177,26 +2179,17 @@ function drawPosts(ctx, view) {
     let hiddenTop = view.hidden && view.hidden.post === i ? view.hidden.count : 0;
     if (view.hand && view.hand.from === i) hiddenTop += view.hand.count;
     const visible = posts[i].length - hiddenTop;
-    if (visible > 0) {
-      // Тень всей стопки: чем она выше, тем длиннее, мягче и бледнее.
-      drawShadow(ctx, post.x, post.baseY, visible * step + size * 0.5, size * 2, 1, post.scale);
-    }
     for (let slot = 0; slot < visible; slot += 1) {
       const pos = slotPosition(layout, i, slot);
       const wave = waveOffset(view, i, slot, size);
       const squash = landingSquash(view, i, slot);
       drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash);
     }
-    const topY = visible > 0
-      ? slotPosition(layout, i, visible - 1).y - waveOffset(view, i, visible - 1, size)
-      : post.baseY - size * 0.25;
-    if (visible > 0) drawHole(ctx, post.x, topY, size, posts[i][visible - 1]);
-    drawPegStub(ctx, post.x, topY, size);
-    // Свободные места показываются контурами, а не длиной штыря.
-    // Ближний свободный слот — самый заметный: именно туда сядет группа.
-    for (let slot = visible; slot < layout.capacity; slot += 1) {
-      const pos = slotPosition(layout, i, slot);
-      drawGhostSlot(ctx, pos.x, pos.y, size, Math.max(GHOST_FADE_MIN, GHOST_FADE_STEP ** (slot - visible)));
+    // Выступы видны только у верхнего кубика: у остальных верхнюю грань
+    // закрывает следующий кубик.
+    if (visible > 0) {
+      const top = slotPosition(layout, i, visible - 1);
+      drawStuds(ctx, top.x, top.y - waveOffset(view, i, visible - 1, size), size, posts[i][visible - 1]);
     }
     ctx.translate(-dx, 0);
   }
@@ -2229,7 +2222,7 @@ function drawHintMark(ctx, layout, post, pulse, isSource) {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const top = post.baseY - layout.pegHeight * post.scale - size * 0.75;
+  const top = post.baseY - layout.columnHeight * post.scale - size * 0.4;
   const bob = pulse * size * 0.18;
   const w = size * 0.42;
   ctx.fillStyle = INK;
@@ -2256,17 +2249,16 @@ function drawHand(ctx, view) {
   const size = layout.size * post.scale;
   const baseSlot = view.posts[hand.from].length - hand.count;
   const lift = hand.lift * (size * 1.5);
-  // Тень группы остаётся на земле и слабеет по мере подъёма — так видно,
-  // что группа в воздухе.
-  const airborne = 1 - hand.lift * HAND_SHADOW_FADE;
-  drawShadow(ctx, post.x, post.baseY, baseSlot * layout.step * post.scale + size, size * 2, airborne, airborne * post.scale);
+  // Тень поднятой группы остаётся на земле под своим столбиком и слабеет —
+  // так видно, что группа в воздухе.
+  drawShadow(ctx, post.x, post.baseY, baseSlot * layout.step * post.scale, size * 2, HAND_SHADOW_FADE);
   let topY = 0;
   for (let i = 0; i < hand.count; i += 1) {
     const pos = slotPosition(layout, hand.from, baseSlot + i);
     topY = pos.y - lift;
     drawCube(ctx, post.x + hand.bob, topY, size, hand.color, 1);
   }
-  drawHole(ctx, post.x + hand.bob, topY, size, hand.color);
+  drawStuds(ctx, post.x + hand.bob, topY, size, hand.color);
 }
 
 function drawFlight(ctx, view) {
@@ -2275,12 +2267,11 @@ function drawFlight(ctx, view) {
   const { layout } = view;
   // Тень летящей группы остаётся на земле под ней — иначе группа
   // выглядит приклеенной к фону.
-  const height = Math.max(0, flight.groundY - flight.y);
-  drawShadow(ctx, flight.x, flight.groundY, height, layout.size * 2, FLIGHT_SHADOW_FADE);
+  drawShadow(ctx, flight.x, flight.groundY, Math.max(0, flight.groundY - flight.y), layout.size * 2, FLIGHT_SHADOW_FADE);
   for (let i = 0; i < flight.count; i += 1) {
     drawCube(ctx, flight.x, flight.y - i * layout.step, layout.size, flight.color, 1);
   }
-  drawHole(ctx, flight.x, flight.y - (flight.count - 1) * layout.step, layout.size, flight.color);
+  drawStuds(ctx, flight.x, flight.y - (flight.count - 1) * layout.step, layout.size, flight.color);
 }
 
 return { drawScene };

@@ -1,6 +1,6 @@
 // Расчёт позиций под размер экрана. Ничего не рисует — только числа.
 
-import { cubeSideHeight, PEG_OVERHANG, BASE_RADIUS_RATIO } from './iso.js';
+import { cubeSideHeight, BASE_RADIUS_RATIO } from './iso.js';
 
 // Доли доступной высоты (без полос HUD). Поле — герой экрана,
 // поэтому ему отдано больше половины.
@@ -21,7 +21,7 @@ const FIELD_USABLE = 0.8;
 const STACK_ALLOWANCE = 1.6;
 const ROW_GAP_SHARE = 0.05;
 const SINGLE_ROW_LIMIT = 5;
-const HIT_PADDING = 0.2;
+const HIT_WIDTH = 1.2;
 // Задний ряд чуть меньше переднего — иначе два ряда читаются как таблица.
 const BACK_ROW_SCALE = 0.94;
 
@@ -43,14 +43,12 @@ export function computeLayout(width, height, postCount, capacity) {
   const cubeWidth = fitCubeWidth(width, perRow, rowHeight, capacity);
   const size = cubeWidth / 2;
   const step = cubeSideHeight(size);
-  const stackHeight = capacity * step + size * 0.5;
-  // Штырь торчит над верхней гранью полной стопки ровно на PEG_OVERHANG
-  // высоты кубика — поэтому в высоту входит и половина верхнего ромба.
-  const pegHeight = (capacity + PEG_OVERHANG) * step + size * 0.25;
+  // Полная колонка: вместимость кубиков плюс половина верхнего ромба.
+  const columnHeight = capacity * step + size * 0.5;
   // Ряды стоят единым блоком по центру поля: при вместимости 3 стопки
   // низкие, и прижимать их к краю — значит рвать экран пополам.
   const baseRadiusY = size * BASE_RADIUS_RATIO * 0.5;
-  const blockHeight = pegHeight + baseRadiusY * 2;
+  const blockHeight = columnHeight + baseRadiusY * 2;
   const groupHeight = rows * blockHeight + (rows - 1) * rowGap;
   const groupTop = fieldTop + Math.max(0, (fieldHeight - groupHeight) / 2);
 
@@ -67,7 +65,7 @@ export function computeLayout(width, height, postCount, capacity) {
     posts.push({
       index: i,
       x: startX + inRow * spacing,
-      baseY: rowTop + pegHeight * scale,
+      baseY: rowTop + columnHeight * scale,
       row,
       scale
     });
@@ -83,8 +81,7 @@ export function computeLayout(width, height, postCount, capacity) {
     size,
     cubeWidth,
     step,
-    stackHeight,
-    pegHeight,
+    columnHeight,
     spacing,
     capacity
   };
@@ -110,13 +107,15 @@ function fitCubeWidth(width, perRow, rowHeight, capacity) {
   return Math.max(MIN_CUBE_WIDTH, Math.min(MAX_CUBE_WIDTH, fitted));
 }
 
-// Хитбокс шире визуального штыря на 20% с каждой стороны — пальцу нужен запас.
+// Штыря больше нет, целиться в тонкий блин подставки невозможно, поэтому
+// область тапа — вся колонка над подставкой, шире её в HIT_WIDTH раз.
 export function hitTest(layout, px, py) {
   for (let i = 0; i < layout.posts.length; i += 1) {
     const post = layout.posts[i];
-    const half = layout.size * post.scale * (1 + HIT_PADDING);
-    const top = post.baseY - (layout.pegHeight + layout.size * 0.5) * post.scale;
-    const bottom = post.baseY + layout.size * post.scale * 0.7;
+    const baseWidth = layout.size * post.scale * BASE_RADIUS_RATIO * 2;
+    const half = (baseWidth * HIT_WIDTH) / 2;
+    const top = post.baseY - layout.columnHeight * post.scale;
+    const bottom = post.baseY + layout.size * post.scale * BASE_RADIUS_RATIO * 0.5;
     if (px >= post.x - half && px <= post.x + half && py >= top && py <= bottom) return i;
   }
   return -1;
