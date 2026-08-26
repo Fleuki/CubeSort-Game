@@ -10,8 +10,8 @@ import { createHistory, pushHistory, popHistory, canUndo, clearHistory } from '.
 import { computeLayout, hitTest, slotPosition } from './render/layout.js';
 import { drawScene } from './render/scene.js';
 import { PALETTE } from './render/iso.js';
-import { createCity, prepareReward, commitReward, resetCity, drawReward, rewardPoint, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding, cameraTarget, setCameraStage, syncCamera, rebuildCity, CITY_SCHEMA_VERSION } from './render/city.js';
-import { createTweenPool, addTween, updateTweens, isBusy, EASING, setTimeScale } from './anim/tween.js';
+import { createCity, prepareReward, commitReward, flushRewards, resetCity, rewardPoint, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding, cameraTarget, setCameraStage, loadCity, rebuildCity, CITY_SCHEMA_VERSION } from './render/city.js';
+import { createTweenPool, addTween, updateTweens, clearTweens, EASING, setTimeScale } from './anim/tween.js';
 import { createFx, updateFx, spawnSplinters, shakeCamera } from './anim/fx.js';
 import * as sfx from './audio/sfx.js';
 import { createHud, FREE_UNDO, FREE_HINTS } from './ui/hud.js';
@@ -25,7 +25,6 @@ const BOB_PERIOD = 1600;
 const FLIGHT_BASE_MS = 180;
 const FLIGHT_PER_CUBE_MS = 25;
 const ARC_HEIGHT = 70;
-const LAND_MS = 90;
 const SQUASH_MS = 110;
 const SQUASH_FROM = 0.88;
 const DENY_MS = 220;
@@ -85,19 +84,21 @@ const app = {
   hand: null,
   flight: null,
   hidden: null,
-  landing: null,
-  wave: null,
   shake: null,
-  burst: null,
-  capAnim: null,
-  reward: null,
-  ripple: null,
-  targets: null,
   hint: null,
+  // Празднование сборки столбика идёт параллельно ходам, поэтому
+  // каждый эффект живёт в списке: их может быть несколько сразу.
+  landings: [],
+  waves: [],
+  bursts: [],
+  caps: [],
+  rewards: [],
+  drops: [],
+  ripples: [],
+  winning: false,
   pending: [],
   hintPulse: 0,
   hintUntil: 0,
-  cityAppear: null,
   fade: 0,
   busy: false,
   paused: false,
@@ -201,6 +202,10 @@ function levelData(id) {
 }
 
 function startLevel(id) {
+  // Награда, не долетевшая до города, всё равно заработана; хвосты
+  // анимаций прошлого уровня гасим, чтобы они не писали в новое состояние.
+  flushRewards(app.city);
+  clearTweens(app.tweens);
   app.level = id;
   app.state = createState(levelData(id));
   clearHistory(app.history);
@@ -208,17 +213,12 @@ function startLevel(id) {
   app.flight = null;
   app.hidden = null;
   app.landing = null;
-  app.wave = null;
   app.shake = null;
-  app.burst = null;
-  app.capAnim = null;
-  app.reward = null;
-  app.ripple = null;
-  app.targets = null;
   app.hint = null;
+  clearEffects();
   app.pending.length = 0;
-  app.cityAppear = null;
   app.busy = false;
+  app.winning = false;
   app.undoUsed = 0;
   app.hintsUsed = 0;
   app.extraPostUsed = false;
@@ -298,61 +298,43 @@ function takeGroup(index) {
       if (app.hand) app.hand.lift = t;
     }
   });
-  updateTargets();
   sfx.playTake();
   vibrate(VIBRO_TAKE);
 }
 
-// Пока группа в руке, подсвечены все столбики, куда её можно положить.
-function updateTargets() {
-  if (!app.hand) {
-    app.targets = null;
-    return;
-  }
-  const targets = app.targets && app.targets.length === app.state.posts.length ? app.targets : new Array(app.state.posts.length);
-  for (let i = 0; i < app.state.posts.length; i += 1) {
-    targets[i] = canMove(app.state.posts, app.hand.from, i, app.state.capacity);
-  }
-  app.targets = targets;
-}
-
+// Опускание группы обратно ввод не блокирует: пока она едет вниз,
+// её можно перехватить и отправить на другой столбик.
 function returnGroup() {
   const hand = app.hand;
-  if (!hand) return;
-  app.busy = true;
+  if (!hand || hand.returning) return;
+  hand.returning = true;
   addTween(app.tweens, {
     duration: LIFT_MS,
     easing: EASING.easeOutQuad,
     onUpdate: (t) => {
-      if (app.hand) app.hand.lift = 1 - t;
+      if (app.hand === hand) hand.lift = 1 - t;
     },
     onDone: () => {
-      app.hand = null;
-      app.targets = null;
-      app.busy = false;
+      if (app.hand === hand) app.hand = null;
     }
   });
 }
 
+// Дрожь отказа — тоже декорация: следующий тап она не съедает.
 function denyMove(index) {
   sfx.playDeny();
-  app.busy = true;
-  const started = app.time;
+  const shake = { index, offset: 0 };
+  app.shake = shake;
   addTween(app.tweens, {
     duration: DENY_MS,
     onUpdate: (t) => {
       const decay = 1 - t;
-      app.shake = {
-        index,
-        offset: Math.sin(t * Math.PI * 2 * DENY_CYCLES) * DENY_AMPLITUDE * decay
-      };
+      shake.offset = Math.sin(t * Math.PI * 2 * DENY_CYCLES) * DENY_AMPLITUDE * decay;
     },
     onDone: () => {
-      app.shake = null;
-      app.busy = false;
+      if (app.shake === shake) app.shake = null;
     }
   });
-  return started;
 }
 
 function startFlight(to) {
@@ -375,7 +357,6 @@ function startFlight(to) {
   const peak = Math.min(startY, end.y) - ARC_HEIGHT;
 
   app.hand = null;
-  app.targets = null;
   app.hidden = { post: from, count };
   app.busy = true;
   app.flight = { color, count, x: start.x, y: startY, groundY: layout.posts[to].baseY };
@@ -399,17 +380,19 @@ function finishFlight(from, to, count, color, end) {
   app.state.moves += 1;
   app.flight = null;
   app.hidden = null;
+  // Перелёт кончился — ввод свободен. Всё, что дальше, декоративно.
+  app.busy = false;
 
-  const landedFrom = app.state.posts[to].length - count;
-  app.landing = { post: to, fromSlot: landedFrom, squash: SQUASH_FROM };
+  const landing = { post: to, fromSlot: app.state.posts[to].length - count, squash: SQUASH_FROM };
+  app.landings.push(landing);
   addTween(app.tweens, {
     duration: SQUASH_MS,
     easing: EASING.easeOutBack,
     onUpdate: (t) => {
-      if (app.landing) app.landing.squash = SQUASH_FROM + (1 - SQUASH_FROM) * t;
+      landing.squash = SQUASH_FROM + (1 - SQUASH_FROM) * t;
     },
     onDone: () => {
-      app.landing = null;
+      drop(app.landings, landing);
     }
   });
 
@@ -424,64 +407,84 @@ function finishFlight(from, to, count, color, end) {
     completePost(to, color, isSolved(app.state.posts, app.state.capacity));
     return;
   }
-  addTween(app.tweens, {
-    duration: LAND_MS,
-    onDone: () => {
-      app.busy = false;
-      checkWin();
-    }
-  });
+  checkWin();
+}
+
+// Эффекты снимаются из своих списков по ссылке: за время анимации
+// список мог поменяться.
+function drop(list, effect) {
+  const at = list.indexOf(effect);
+  if (at >= 0) list.splice(at, 1);
+}
+
+function clearEffects() {
+  cancelRewards();
+  app.landings.length = 0;
+  app.waves.length = 0;
+  app.bursts.length = 0;
+  app.caps.length = 0;
+  app.ripples.length = 0;
+}
+
+// Отмена хода и смена уровня снимают награды с полёта: то, что уже
+// зачтено, коммитится отдельно, остальное не должно долететь.
+function cancelRewards() {
+  for (let i = 0; i < app.rewards.length; i += 1) app.rewards[i].cancelled = true;
+  for (let i = 0; i < app.drops.length; i += 1) app.drops[i].cancelled = true;
+  app.rewards.length = 0;
+  app.drops.length = 0;
 }
 
 function completePost(index, color, solving) {
-  const layout = app.layout;
-  const post = layout.posts[index];
   const capacity = app.state.capacity;
-  const topY = slotPosition(layout, index, capacity - 1).y;
-  app.busy = true;
   sfx.playComplete();
   vibrate(VIBRO_COMPLETE);
 
   // 0 мс — волна подпрыгивания снизу вверх.
-  app.wave = { post: index, t: 0 };
+  const wave = { post: index, t: 0 };
+  app.waves.push(wave);
   addTween(app.tweens, {
     duration: WAVE_STEP_MS * (capacity + WAVE_HOP_STEPS),
     onUpdate: (t) => {
-      if (app.wave) app.wave.t = t * (capacity + WAVE_HOP_STEPS);
+      wave.t = t * (capacity + WAVE_HOP_STEPS);
     },
     onDone: () => {
-      app.wave = null;
+      drop(app.waves, wave);
     }
   });
 
   // +180 мс — вспышка-кольцо от основания стопки наружу.
+  const burst = { post: index, t: 0 };
   addTween(app.tweens, {
     delay: BURST_AT_MS,
     duration: BURST_MS,
     onStart: () => {
-      app.burst = { post: index, t: 0 };
+      app.bursts.push(burst);
     },
     onUpdate: (t) => {
-      if (app.burst) app.burst.t = t;
+      burst.t = t;
     },
     onDone: () => {
-      app.burst = null;
+      drop(app.bursts, burst);
     }
   });
 
   // +220 мс — крышка падает сверху и садится с отскоком.
-  app.capAnim = { post: index, visible: false, lift: 1, squash: 1 };
+  // Крышка занимает место сразу: до её падения у столбика не рисуется
+  // ни выступ, ни она сама.
+  const cap = { post: index, hidden: true, lift: 1, squash: 1 };
+  app.caps.push(cap);
   addTween(app.tweens, {
     delay: CAP_AT_MS,
     duration: CAP_MS,
     easing: EASING.easeOutBack,
     onStart: () => {
-      if (app.capAnim) app.capAnim.visible = true;
+      cap.hidden = false;
     },
     onUpdate: (t) => {
-      if (app.capAnim) app.capAnim.lift = 1 - t;
+      cap.lift = 1 - t;
     },
-    onDone: settleCap
+    onDone: () => settleCap(cap)
   });
 
   // +240 мс — щепки и тряска камеры.
@@ -490,89 +493,97 @@ function completePost(index, color, solving) {
     duration: SHAKE_AT_MS - SPARK_AT_MS + 1,
     onStart: () => {
       if (app.fx.reducedMotion) return;
-      spawnSplinters(app.fx, post.x, topY, PALETTE[color % PALETTE.length], SPARK_COUNT, SPARK_LIFE_MS);
+      const top = slotPosition(app.layout, index, capacity - 1);
+      spawnSplinters(app.fx, app.layout.posts[index].x, top.y, PALETTE[color % PALETTE.length], SPARK_COUNT, SPARK_LIFE_MS);
       shakeCamera(app.fx);
     }
   });
 
   // +300 мс — награда вылетает из стопки и летит в город.
   const pending = prepareReward(app.city, color, app.level, solving);
-  if (!pending) {
-    addTween(app.tweens, { delay: REWARD_AT_MS, duration: 1, onDone: finishComplete });
-    return;
-  }
-  const target = rewardPoint(app.layout.city, app.city, pending);
-  const startUnit = layout.step * post.scale;
-  const arc = Math.hypot(target.x - post.x, target.y - topY) * REWARD_ARC;
-  app.reward = { pending, flying: false, x: post.x, y: topY, unit: startUnit, angle: 0 };
+  if (!pending) return;
+  const reward = { pending, post: index, flying: false, x: 0, y: 0, unit: 1, angle: 0 };
   addTween(app.tweens, {
     delay: REWARD_AT_MS,
     duration: REWARD_FLIGHT_MS,
     easing: EASING.easeInOutQuad,
     onStart: () => {
-      if (app.reward) app.reward.flying = true;
+      app.rewards.push(reward);
+      reward.flying = true;
     },
-    onUpdate: (t) => {
-      const reward = app.reward;
-      if (!reward) return;
-      reward.x = post.x + (target.x - post.x) * t;
-      // Парабола: дуга поднимается на 40% расстояния до города.
-      reward.y = topY + (target.y - topY) * t - 4 * arc * t * (1 - t);
-      reward.unit = startUnit + (target.unit - startUnit) * t;
-      reward.angle = Math.sin(t * Math.PI) * REWARD_SPIN;
-    },
-    onDone: () => landReward(pending, target, !pending.prop)
+    onUpdate: (t) => flyReward(reward, capacity, t),
+    onDone: () => {
+      if (reward.cancelled) return;
+      landReward(reward, !pending.prop);
+    }
   });
 }
 
-// Крышка села: щелчок и короткий squash.
-function settleCap() {
+// Координаты пересчитываются каждый кадр: и точка вылета на поле,
+// и точка приземления в городе живут в разных системах, а масштаб
+// города может измениться прямо во время полёта.
+function flyReward(reward, capacity, t) {
+  const layout = app.layout;
+  const post = layout.posts[reward.post];
+  if (!post) return;
+  const from = slotPosition(layout, reward.post, capacity - 1);
+  const to = rewardPoint(layout.city, app.city, reward.pending);
+  const startUnit = layout.step * post.scale;
+  const arc = Math.hypot(to.x - post.x, to.y - from.y) * REWARD_ARC;
+  reward.x = post.x + (to.x - post.x) * t;
+  // Парабола: дуга поднимается на 40% расстояния до города.
+  reward.y = from.y + (to.y - from.y) * t - 4 * arc * t * (1 - t);
+  reward.unit = startUnit + (to.unit - startUnit) * t;
+  reward.angle = Math.sin(t * Math.PI) * REWARD_SPIN;
+}
+
+// Крышка села: щелчок и короткий squash. Дальше её рисует сцена
+// по состоянию столбика.
+function settleCap(cap) {
   sfx.playCap();
-  if (!app.capAnim) return;
-  app.capAnim.lift = 0;
-  app.capAnim.squash = CAP_SQUASH_FROM;
+  cap.lift = 0;
+  cap.squash = CAP_SQUASH_FROM;
   addTween(app.tweens, {
     duration: CAP_SQUASH_MS,
     easing: EASING.easeOutBack,
     onUpdate: (t) => {
-      if (app.capAnim) app.capAnim.squash = CAP_SQUASH_FROM + (1 - CAP_SQUASH_FROM) * t;
+      cap.squash = CAP_SQUASH_FROM + (1 - CAP_SQUASH_FROM) * t;
     },
     onDone: () => {
-      // Дальше крышку рисует сцена по состоянию столбика.
-      app.capAnim = null;
+      drop(app.caps, cap);
     }
   });
 }
 
 // +820 мс — награда приземлилась: отскок, волна по площадке, и только
 // после этого она попадает в макет.
-function landReward(pending, target, house) {
+function landReward(reward, house) {
+  const pending = reward.pending;
   sfx.playLand();
-  app.reward = null;
-  app.ripple = { x: target.x, y: target.y, t: 0 };
+  drop(app.rewards, reward);
+  const target = rewardPoint(app.layout.city, app.city, pending);
+  const ripple = { x: target.x, y: target.y, t: 0 };
+  app.ripples.push(ripple);
   addTween(app.tweens, {
     duration: RIPPLE_MS,
     onUpdate: (t) => {
-      if (app.ripple) app.ripple.t = t;
+      ripple.t = t;
     },
     onDone: () => {
-      app.ripple = null;
+      drop(app.ripples, ripple);
     }
   });
-  app.cityAppear = {
-    squash: REWARD_SQUASH_FROM,
-    draw(ctx, rect) {
-      drawReward(ctx, rect, app.city, pending, this.squash);
-    }
-  };
+  const landing = { pending, squash: REWARD_SQUASH_FROM };
+  app.drops.push(landing);
   addTween(app.tweens, {
     duration: REWARD_LAND_MS,
     easing: EASING.easeOutBack,
     onUpdate: (t) => {
-      if (app.cityAppear) app.cityAppear.squash = REWARD_SQUASH_FROM + (1 - REWARD_SQUASH_FROM) * t;
+      landing.squash = REWARD_SQUASH_FROM + (1 - REWARD_SQUASH_FROM) * t;
     },
     onDone: () => {
-      app.cityAppear = null;
+      drop(app.drops, landing);
+      if (landing.cancelled) return;
       commitReward(app.city, pending);
       persist();
       const district = house ? completedDistrict(app.city) : -1;
@@ -580,14 +591,9 @@ function landReward(pending, target, house) {
         lightDistrict(district);
         return;
       }
-      finishComplete();
+      checkWin();
     }
   });
-}
-
-function finishComplete() {
-  app.busy = false;
-  checkWin();
 }
 
 // Район завершён: окна загораются волной слева направо. Свет остаётся
@@ -625,7 +631,7 @@ function moveCamera() {
   const from = app.city.stage;
   const to = cameraTarget(app.city);
   if (Math.abs(to - from) < 0.001) {
-    finishComplete();
+    checkWin();
     return;
   }
   addTween(app.tweens, {
@@ -636,14 +642,19 @@ function moveCamera() {
     },
     onDone: () => {
       setCameraStage(app.city, to);
-      finishComplete();
+      checkWin();
     }
   });
 }
 
+// Победа проверяется после каждого хода и после каждой прилетевшей
+// награды, но сработать должна ровно один раз.
 function checkWin() {
+  if (app.winning || app.screen !== 'game' || !app.state) return;
   if (!isSolved(app.state.posts, app.state.capacity)) return;
-  app.busy = true;
+  // Дом за пройденный уровень ещё летит — экран победы подождёт его.
+  if (app.rewards.length > 0 || app.drops.length > 0) return;
+  app.winning = true;
   platform.gameplayStop();
   sfx.playWin();
   app.progress.level = app.level + 1;
@@ -658,7 +669,6 @@ function checkWin() {
         moves: app.state.moves,
         cityCount: app.city.buildings.length
       });
-      app.busy = false;
     }
   });
 }
@@ -708,11 +718,11 @@ async function requestUndo() {
   if (app.undoUsed >= FREE_UNDO && !(await earnReward())) return;
   const snapshot = popHistory(app.history);
   if (!snapshot) return;
+  cancelRewards();
   app.state.posts = snapshot.posts;
   app.state.moves = snapshot.moves;
   restoreCity(app.city, snapshot.city);
   app.hand = null;
-  app.targets = null;
   app.capAnim = null;
   app.hidden = null;
   app.undoUsed += 1;
@@ -730,7 +740,6 @@ async function requestHint() {
     return;
   }
   app.hand = null;
-  app.targets = null;
   app.hint = move;
   app.hintUntil = app.time + HINT_SHOW_MS;
   app.hintsUsed += 1;
@@ -744,7 +753,6 @@ async function requestExtraPost() {
   app.state.posts.push([]);
   app.extraPostUsed = true;
   app.hand = null;
-  app.targets = null;
   clearHistory(app.history);
   rebuildLayout();
   updateHud();
@@ -790,10 +798,7 @@ async function restore() {
   // заново по актуальным правилам — из числа пройденных уровней (дома)
   // и числа собранных за них столбиков (декорации).
   if (data.citySchemaVersion === CITY_SCHEMA_VERSION && Array.isArray(data.city)) {
-    app.city.buildings = data.city.slice();
-    app.city.props = Array.isArray(data.props) ? data.props.slice() : [];
-    syncCamera(app.city);
-    app.city.dirty = true;
+    loadCity(app.city, data.city, Array.isArray(data.props) ? data.props : []);
   } else {
     const passed = app.progress.level - 1;
     rebuildCity(app.city, passed, columnsFor(passed));
@@ -848,18 +853,17 @@ function render() {
     dpr: app.dpr,
     posts: app.state ? app.state.posts : [],
     completed,
-    targets: app.targets,
-    capAnim: app.capAnim,
-    burst: app.burst,
-    reward: app.reward,
-    ripple: app.ripple,
+    caps: app.caps,
+    bursts: app.bursts,
+    rewards: app.rewards,
+    ripples: app.ripples,
+    drops: app.drops,
     city: app.city,
-    cityAppear: app.cityAppear,
     hand: app.hand,
     flight: app.flight,
     hidden: app.hidden,
-    landing: app.landing,
-    wave: app.wave,
+    landings: app.landings,
+    waves: app.waves,
     shake: app.shake,
     hint: app.hint,
     hintPulse: app.hintPulse,

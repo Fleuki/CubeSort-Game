@@ -49,7 +49,9 @@ export const TRUNK_HEIGHT = 0.8;
 export const CROWN_WIDTH = 1.1;
 export const CROWN_HEIGHT = 0.9;
 // Большое дерево: крона из двух кубиков, верхний уже нижнего.
-export const CROWN_LARGE = [{ width: 1.15, height: 0.75 }, { width: 0.85, height: 0.55 }];
+export const CROWN_LARGE = [{ width: 1.15, height: 0.75 }, { width: 0.9, height: 0.85 }];
+// Насколько верхняя крона утоплена в нижнюю.
+export const CROWN_OVERLAP = 0.3;
 export const LAMP_POST_WIDTH = 0.12;
 export const LAMP_POST_HEIGHT = 1.2;
 export const LAMP_HEAD_WIDTH = 0.34;
@@ -58,7 +60,7 @@ export const BUSH_SCALE = 0.5;
 
 const PROP_HEIGHT = {
   treeSmall: TRUNK_HEIGHT + CROWN_HEIGHT,
-  treeLarge: TRUNK_HEIGHT + CROWN_LARGE[0].height + CROWN_LARGE[1].height,
+  treeLarge: TRUNK_HEIGHT + CROWN_LARGE[0].height + CROWN_LARGE[1].height - CROWN_OVERLAP,
   lamp: LAMP_POST_HEIGHT + LAMP_HEAD_HEIGHT,
   bush: BUSH_SCALE
 };

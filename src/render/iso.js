@@ -34,9 +34,6 @@ const BASE_SHADOW_SPREAD = 1.35;
 // он должен находиться взглядом мгновенно.
 const RECESS_DARK = -0.26;
 const RECESS_EDGE_LIGHT = 0.22;
-// Подсветка допустимой цели хода. Статичная, не мигает.
-const TARGET_RING = 'rgba(255, 255, 255, 0.22)';
-const TARGET_RING_WIDTH = 2.5;
 // Крышка собранного столбика — та же плита, что на плоских крышах города.
 const CAP_OVERHANG = 0.08;
 const CAP_HEIGHT = 0.18;
@@ -337,18 +334,6 @@ export function drawPostBase(ctx, x, baseY, size, empty = false) {
     ctx.ellipse(x, baseY, baseRx * 0.74, baseRy * 0.74, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
-}
-
-// Кольцо по краю выемки у пустого столбика и по краю подставки у занятого.
-// Рисуется поверх кубиков: под ними подставку почти не видно, а игрок
-// должен видеть все допустимые цели, пока держит группу.
-export function drawTargetRing(ctx, x, baseY, size, empty) {
-  const rx = empty ? size : size * BASE_RADIUS_RATIO;
-  ctx.strokeStyle = TARGET_RING;
-  ctx.lineWidth = TARGET_RING_WIDTH;
-  ctx.beginPath();
-  ctx.ellipse(x, baseY, rx, rx / 2, 0, 0, Math.PI * 2);
-  ctx.stroke();
 }
 
 // Вдавленная выемка под кубик: тёмный эллипс размером с нижнюю грань

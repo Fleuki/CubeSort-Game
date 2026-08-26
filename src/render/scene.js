@@ -1,9 +1,9 @@
 // Отрисовка кадра целиком. Модуль только читает view — состояние
 // игры он не меняет.
 
-import { drawCube, drawPostBase, drawStuds, drawCap, drawTargetRing, SKY_TOP, TABLE, FIELD, INK, mix, shade } from './iso.js';
+import { drawCube, drawPostBase, drawStuds, drawCap, SKY_TOP, TABLE, FIELD, INK, mix, shade } from './iso.js';
 import { drawShadow } from './shadow.js';
-import { getCityCanvas, drawRewardAt, drawRipple } from './city.js';
+import { getCityCanvas, drawReward, drawRewardAt, drawRipple } from './city.js';
 import { slotPosition } from './layout.js';
 import { drawParticles } from '../anim/fx.js';
 import { EASING } from '../anim/tween.js';
@@ -68,8 +68,11 @@ function drawCity(ctx, view) {
   const rect = view.layout.city;
   const canvas = getCityCanvas(view.city, rect);
   ctx.drawImage(canvas, rect.x, rect.y);
-  if (view.ripple) drawRipple(ctx, rect, view.city, view.ripple);
-  if (view.cityAppear) view.cityAppear.draw(ctx, rect);
+  for (let i = 0; i < view.ripples.length; i += 1) drawRipple(ctx, rect, view.city, view.ripples[i]);
+  // Приземлившиеся награды: отскок рисуется поверх запечённого макета.
+  for (let i = 0; i < view.drops.length; i += 1) {
+    drawReward(ctx, rect, view.city, view.drops[i].pending, view.drops[i].squash);
+  }
 }
 
 function postOffset(view, index) {
@@ -100,54 +103,61 @@ function drawPosts(ctx, view) {
       const squash = landingSquash(view, i, slot);
       drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash);
     }
-    // Кольцо цели — поверх кубиков, иначе его закрывает нижний кубик.
-    if (view.targets && view.targets[i]) drawTargetRing(ctx, post.x, post.baseY, size, visible === 0);
     if (visible > 0) {
       const top = slotPosition(layout, i, visible - 1);
       const topY = top.y - waveOffset(view, i, visible - 1, step);
       const cap = capState(view, i);
       // Собранный столбик закрыт крышкой, и выступ под ней не нужен —
       // крышка на него и надета.
-      if (cap) {
-        if (cap.visible) drawCap(ctx, top.x, topY - cap.lift * step * CAP_DROP, size, posts[i][visible - 1], cap.squash);
-      } else {
-        drawStuds(ctx, top.x, topY, size, posts[i][visible - 1]);
-      }
+      if (!cap) drawStuds(ctx, top.x, topY, size, posts[i][visible - 1]);
+      else if (!cap.hidden) drawCap(ctx, top.x, topY - cap.lift * step * CAP_DROP, size, posts[i][visible - 1], cap.squash);
     }
     ctx.translate(-dx, 0);
   }
 }
 
-// null — крышки нет; иначе состояние падения. Пока крышка не показана,
+// null — крышки нет; иначе состояние падения. Пока крышка не долетела,
 // у столбика не рисуется ни она, ни выступ.
 function capState(view, index) {
   if (!view.completed || !view.completed[index]) return null;
-  if (view.capAnim && view.capAnim.post === index) return view.capAnim;
+  for (let i = 0; i < view.caps.length; i += 1) {
+    if (view.caps[i].post === index) return view.caps[i];
+  }
   return STATIC_CAP;
 }
 
-const STATIC_CAP = { visible: true, lift: 0, squash: 1 };
+const STATIC_CAP = { hidden: false, lift: 0, squash: 1 };
 
 function waveOffset(view, postIndex, slot, step) {
-  if (!view.wave || view.wave.post !== postIndex) return 0;
-  const local = (view.wave.t - slot) / WAVE_HOP_STEPS;
-  if (local <= 0 || local >= 1) return 0;
-  const shape = local < 0.5 ? EASING.easeOutBack(local * 2) : (1 - local) * 2;
-  return shape * step * WAVE_RISE;
+  for (let i = 0; i < view.waves.length; i += 1) {
+    const wave = view.waves[i];
+    if (wave.post !== postIndex) continue;
+    const local = (wave.t - slot) / WAVE_HOP_STEPS;
+    if (local <= 0 || local >= 1) return 0;
+    const shape = local < 0.5 ? EASING.easeOutBack(local * 2) : (1 - local) * 2;
+    return shape * step * WAVE_RISE;
+  }
+  return 0;
 }
 
 function landingSquash(view, postIndex, slot) {
-  if (!view.landing || view.landing.post !== postIndex) return 1;
-  if (slot < view.landing.fromSlot) return 1;
-  return view.landing.squash;
+  for (let i = 0; i < view.landings.length; i += 1) {
+    const landing = view.landings[i];
+    if (landing.post === postIndex && slot >= landing.fromSlot) return landing.squash;
+  }
+  return 1;
 }
 
 // Вспышка-кольцо от основания собранной стопки наружу.
 function drawBurst(ctx, view) {
-  if (!view.burst) return;
-  const post = view.layout.posts[view.burst.post];
+  for (let i = 0; i < view.bursts.length; i += 1) drawBurstRing(ctx, view, view.bursts[i]);
+}
+
+function drawBurstRing(ctx, view, burst) {
+  const post = view.layout.posts[burst.post];
+  if (!post) return;
   const width = view.layout.cubeWidth * post.scale;
-  const t = view.burst.t;
+  const t = burst.t;
   const radius = width * (BURST_FROM + (BURST_TO - BURST_FROM) * t);
   ctx.save();
   ctx.globalAlpha = BURST_ALPHA * (1 - t);
@@ -160,11 +170,12 @@ function drawBurst(ctx, view) {
 }
 
 // Награда летит со стопки в город: связь поля и города должна быть видна,
-// а не подразумеваться.
+// а не подразумеваться. Наград может лететь несколько сразу.
 function drawFlyingReward(ctx, view) {
-  const reward = view.reward;
-  if (!reward || !reward.flying) return;
-  drawRewardAt(ctx, reward.pending, reward.x, reward.y, reward.unit, reward.angle);
+  for (let i = 0; i < view.rewards.length; i += 1) {
+    const reward = view.rewards[i];
+    if (reward.flying) drawRewardAt(ctx, reward.pending, reward.x, reward.y, reward.unit, reward.angle);
+  }
 }
 
 // Подсказка: кольцо у подставки плюс стрелка над штырём. Одного кольца

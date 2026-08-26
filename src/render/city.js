@@ -6,7 +6,7 @@ import { PALETTE, WOOD, TABLE, OUTLINE_DARK, OUTLINE_WIDTH, cubeSideHeight, draw
 import { drawShadow, drawShadowAlong } from './shadow.js';
 import {
   CUBE_WIDTH_UNITS, GABLE_RISE, SLAB_HEIGHT, SLAB_OVERHANG, SPIRE_RISE,
-  CROWN_HEIGHT, CROWN_LARGE, CROWN_WIDTH, TRUNK_HEIGHT, TRUNK_WIDTH,
+  CROWN_HEIGHT, CROWN_LARGE, CROWN_OVERLAP, CROWN_WIDTH, TRUNK_HEIGHT, TRUNK_WIDTH,
   LAMP_HEAD_HEIGHT, LAMP_HEAD_WIDTH, LAMP_POST_HEIGHT, LAMP_POST_WIDTH, BUSH_SCALE,
   KIND_ROOF, MAX_CUBES, buildingCubes, buildingHeightUnits, cubeHalf, propHeightUnits,
   propWidthUnits, roofUnits
@@ -14,7 +14,7 @@ import {
 
 // Версия схемы города. Не совпала с сохранением — город пересобирается
 // с нуля по актуальным правилам, прогресс уровней при этом цел.
-export const CITY_SCHEMA_VERSION = 4;
+export const CITY_SCHEMA_VERSION = 5;
 
 // Ступени застройки: тип новой постройки зависит от того, сколько их уже.
 // Дом даётся за пройденный уровень, поэтому пороги растянуты на десятки
@@ -44,6 +44,17 @@ const JITTER = 0.05;
 const PROP_EVERY = 4;
 const PROP_MAX_RANK = 2;
 const LAMP_EVERY = 4;
+// Реестр занятых точек: новый объект встаёт только туда, где до всех
+// уже стоящих остаётся зазор. Не нашлось места за столько попыток —
+// площадка считается полной.
+const PLACE_ATTEMPTS = 40;
+const MIN_GAP = 0.25;
+// Изометрия сжимает глубину, поэтому мало развести основания: объект,
+// стоящий прямо перед другим, закрывает его телом. Пары, у которых
+// основания перекрываются по горизонтали, разводим по глубине на долю
+// высоты. Полностью убрать перекрытие нельзя: на площадку тогда влезает
+// девять домов вместо шестидесяти.
+const DEPTH_CLEAR = 0.7;
 // Запас от крайней постройки до ограды: половина кубика плюс поле.
 const EDGE_UNITS = CUBE_WIDTH_UNITS / 2 + 0.5;
 
@@ -77,118 +88,218 @@ export function createCity(buildings = [], props = []) {
   const city = {
     buildings: buildings.slice(),
     props: props.slice(),
-    pending: null,
+    // Награды в полёте занимают место в реестре: две одновременные
+    // не должны выбрать одну и ту же точку.
+    pendings: [],
+    seq: 0,
     stage: 0,
     dirty: true,
     canvas: null,
-    ctx: null
+    ctx: null,
+    version: 0,
+    places: null,
+    placesVersion: -1
   };
+  normalizeSeq(city);
   syncCamera(city);
   return city;
+}
+
+// Порядок создания объектов задаёт порядок их постановки в реестр.
+function normalizeSeq(city) {
+  let seq = 0;
+  const all = city.buildings.concat(city.props);
+  for (let i = 0; i < all.length; i += 1) seq = Math.max(seq, (all[i].seq || 0) + 1);
+  city.seq = seq;
+}
+
+function nextSeq(city) {
+  city.seq += 1;
+  return city.seq;
+}
+
+function touch(city) {
+  city.version += 1;
+  city.dirty = true;
 }
 
 // Награда за ход: за пройденный уровень — дом, за отдельный собранный
 // столбик — мелкая декорация по кругу площадки.
 export function prepareReward(city, colorIndex, level, house) {
-  city.dirty = true;
-  city.pending = house ? prepareBuilding(city, colorIndex, level) : prepareProp(city);
-  return city.pending;
+  const pending = house ? prepareBuilding(city, colorIndex, level) : prepareProp(city);
+  if (pending) {
+    city.pendings.push(pending);
+    touch(city);
+  }
+  return pending;
 }
 
 function prepareBuilding(city, colorIndex, level) {
-  if (city.buildings.length >= MAX_BUILDINGS) {
-    const target = pickUpgrade(city, level);
-    return target ? { building: target, upgrade: true, floors: target.floors + 1 } : null;
+  const index = city.buildings.length + countPending(city, false);
+  if (index < MAX_BUILDINGS) {
+    const building = makeBuilding(index, nextSeq(city), colorIndex);
+    building.plot = findPlot(city, building);
+    if (building.plot >= 0) return { building, upgrade: false };
+    city.seq -= 1;
   }
-  return { building: makeBuilding(city.buildings.length, colorIndex), upgrade: false };
+  // Места нет или площадка заполнена: этаж получает существующее здание.
+  const target = pickUpgrade(city, level);
+  return target ? { building: target, upgrade: true, floors: target.floors + 1 } : null;
 }
 
 // Свободный участок под декорацию, а если все заняты — подрастает
 // самая мелкая: куст становится деревом, дерево — большим деревом.
 function prepareProp(city) {
-  const slots = propSlotCount(city.stage);
-  if (city.props.length < slots) return { prop: true, slot: city.props.length, rank: 0 };
-  let best = -1;
-  for (let slot = 0; slot < city.props.length; slot += 1) {
-    if (city.props[slot] >= maxRankOf(slot)) continue;
-    if (best < 0 || city.props[slot] < city.props[best]) best = slot;
+  const slot = city.props.length + countPending(city, true);
+  if (slot < propSlotCount(city.stage)) {
+    const prop = { slot, seq: nextSeq(city), rank: 0, seed: hash(slot + 7919), plot: -1 };
+    prop.plot = findPlot(city, prop);
+    if (prop.plot >= 0) return { prop, upgrade: false };
+    city.seq -= 1;
   }
-  if (best >= 0) return { prop: true, slot: best, rank: city.props[best] + 1 };
+  const grown = pickGrowth(city);
+  if (grown) return grown;
   // Расти уже некуда: награда всё равно долетает и приземляется на свой
   // участок — момент сборки столбика не должен оставаться без реакции.
   if (city.props.length === 0) return null;
-  const slot = hash(city.props.length + city.buildings.length) % city.props.length;
-  return { prop: true, slot, rank: city.props[slot] };
+  const target = city.props[hash(city.props.length + city.buildings.length) % city.props.length];
+  return { prop: target, upgrade: true, rank: target.rank };
+}
+
+// Самая мелкая декорация, которой хватит места вырасти.
+function pickGrowth(city) {
+  let best = null;
+  for (let i = 0; i < city.props.length; i += 1) {
+    const prop = city.props[i];
+    if (prop.rank >= maxRankOf(prop.slot)) continue;
+    if (best && prop.rank >= best.rank) continue;
+    if (!growthFits(city, prop)) continue;
+    best = prop;
+  }
+  return best ? { prop: best, upgrade: true, rank: best.rank + 1 } : null;
+}
+
+// Выросшая крона шире прежней — проверяем, что она никого не задевает.
+function growthFits(city, prop) {
+  const point = plotWorld(prop.plot, prop.seed);
+  const radius = propRadius(propKind(prop.slot, prop.rank + 1));
+  const height = propHeightUnits(propKind(prop.slot, prop.rank + 1));
+  return fits(placesOf(city), point, radius, height, prop);
+}
+
+function countPending(city, prop) {
+  let count = 0;
+  for (let i = 0; i < city.pendings.length; i += 1) {
+    const pending = city.pendings[i];
+    if (!pending.upgrade && Boolean(pending.prop) === prop) count += 1;
+  }
+  return count;
 }
 
 export function commitReward(city, pending) {
   if (!pending) return;
+  const at = city.pendings.indexOf(pending);
+  if (at >= 0) city.pendings.splice(at, 1);
   if (pending.prop) {
-    if (pending.slot < city.props.length) city.props[pending.slot] = pending.rank;
-    else city.props.push(pending.rank);
+    if (pending.upgrade) pending.prop.rank = pending.rank;
+    else city.props.push(pending.prop);
   } else if (pending.upgrade) {
     pending.building.floors = pending.floors;
   } else {
     city.buildings.push(pending.building);
   }
-  city.pending = null;
-  city.dirty = true;
+  touch(city);
+}
+
+// Загрузка сохранения: объекты приходят готовыми, порядок создания
+// восстанавливается по seq.
+export function loadCity(city, buildings, props) {
+  city.buildings = buildings.slice();
+  city.props = props.slice();
+  city.pendings.length = 0;
+  normalizeSeq(city);
+  syncCamera(city);
+  touch(city);
+}
+
+// Награды, не долетевшие до города к концу уровня, всё равно заработаны.
+export function flushRewards(city) {
+  while (city.pendings.length > 0) commitReward(city, city.pendings[0]);
 }
 
 export function resetCity(city) {
   city.buildings.length = 0;
   city.props.length = 0;
-  city.pending = null;
+  city.pendings.length = 0;
+  city.seq = 0;
   syncCamera(city);
-  city.dirty = true;
+  touch(city);
 }
 
 // Миграция: город собирается заново из числа пройденных уровней
-// (дома) и числа собранных столбиков (декорации).
+// (дома) и числа собранных столбиков (декорации). Раскладка при этом
+// та же, что при обычной игре — постановка идёт через тот же реестр.
 export function rebuildCity(city, levels, columns) {
-  const count = Math.min(MAX_BUILDINGS, Math.max(0, Math.floor(levels) || 0));
   city.buildings.length = 0;
   city.props.length = 0;
-  city.pending = null;
-  for (let i = 0; i < count; i += 1) city.buildings.push(makeBuilding(i, migratedColor(i)));
-  const extra = Math.max(0, (Math.floor(levels) || 0) - count);
-  for (let i = 0; i < extra; i += 1) {
-    const target = pickUpgrade(city, i);
-    if (target) target.floors += 1;
+  city.pendings.length = 0;
+  city.seq = 0;
+  touch(city);
+  const passed = Math.max(0, Math.floor(levels) || 0);
+  const perLevel = passed > 0 ? Math.max(0, Math.floor(columns) || 0) / passed : 0;
+  let placed = 0;
+  for (let level = 0; level < passed; level += 1) {
+    // Порядок тот же, что в игре: сначала декорации за столбики уровня,
+    // потом дом за сам уровень.
+    const want = Math.round((level + 1) * perLevel);
+    while (placed < want) {
+      commitReward(city, prepareReward(city, 0, level, false));
+      placed += 1;
+    }
+    syncCamera(city);
+    commitReward(city, prepareReward(city, migratedColor(level), level, true));
   }
-  const districts = Math.floor(count / DISTRICT_SIZE);
-  for (let i = 0; i < count; i += 1) city.buildings[i].lit = city.buildings[i].district < districts;
+  const districts = Math.floor(city.buildings.length / DISTRICT_SIZE);
+  for (let i = 0; i < city.buildings.length; i += 1) {
+    city.buildings[i].lit = city.buildings[i].district < districts;
+  }
   syncCamera(city);
-  for (let i = 0; i < Math.max(0, Math.floor(columns) || 0); i += 1) {
-    commitReward(city, prepareProp(city));
-  }
-  city.dirty = true;
+  touch(city);
 }
 
 // Снимок для отмены хода: меняться могут постройки, декорации,
 // этажность, свет и ступень камеры.
 export function snapshotCity(city) {
   return {
-    count: city.buildings.length,
     stage: city.stage,
+    seq: city.seq,
+    buildings: city.buildings.slice(),
     props: city.props.slice(),
     floors: city.buildings.map((building) => building.floors),
+    ranks: city.props.map((prop) => prop.rank),
     lit: city.buildings.map((building) => building.lit)
   };
 }
 
 export function restoreCity(city, snapshot) {
   if (!snapshot) return;
-  if (city.buildings.length > snapshot.count) city.buildings.length = snapshot.count;
-  for (let i = 0; i < city.buildings.length; i += 1) {
-    city.buildings[i].floors = snapshot.floors[i];
-    city.buildings[i].lit = snapshot.lit[i];
+  city.buildings.length = 0;
+  for (let i = 0; i < snapshot.buildings.length; i += 1) {
+    const building = snapshot.buildings[i];
+    building.floors = snapshot.floors[i];
+    building.lit = snapshot.lit[i];
+    city.buildings.push(building);
   }
   city.props.length = 0;
-  for (let i = 0; i < snapshot.props.length; i += 1) city.props.push(snapshot.props[i]);
-  city.pending = null;
+  for (let i = 0; i < snapshot.props.length; i += 1) {
+    const prop = snapshot.props[i];
+    prop.rank = snapshot.ranks[i];
+    city.props.push(prop);
+  }
+  city.pendings.length = 0;
+  city.seq = snapshot.seq;
   city.stage = snapshot.stage;
-  city.dirty = true;
+  touch(city);
 }
 
 // Район считается завершённым каждые DISTRICT_SIZE построек.
@@ -217,7 +328,7 @@ export function lightingOrder(city, rect, district) {
   const geo = geometry(rect, city);
   return city.buildings
     .filter((building) => building.district === district && !building.lit)
-    .map((building) => ({ building, x: buildingPoint(geo, building).x }))
+    .map((building) => ({ building, x: screenPoint(geo, plotWorld(building.plot, building.seed)).x }))
     .sort((a, b) => a.x - b.x)
     .map((item) => item.building);
 }
@@ -227,9 +338,11 @@ export function lightBuilding(city, building) {
   city.dirty = true;
 }
 
-function makeBuilding(order, colorIndex) {
+function makeBuilding(order, seq, colorIndex) {
   return {
     index: order,
+    seq,
+    plot: -1,
     color: colorIndex % PALETTE.length,
     kind: kindFor(order),
     floors: 1,
@@ -281,7 +394,9 @@ function pickUpgrade(city, level) {
 
 // --- раскладка ------------------------------------------------------------
 
-// Участки нумеруются подряд, каждый PROP_EVERY-й отдан озеленению.
+// Номер участка, с которого начинается поиск места. Дома и озеленение
+// расходятся по разным номерам, чтобы не толкаться с первой попытки,
+// но занятость решает реестр, а не эта нумерация.
 function plotOfBuilding(order) {
   return order + Math.floor(order / (PROP_EVERY - 1));
 }
@@ -306,6 +421,12 @@ function propKind(slot, rank) {
   return rank === 1 ? 'treeSmall' : 'treeLarge';
 }
 
+function propRadius(kind) {
+  return propWidthUnits(kind) / 2;
+}
+
+const BUILDING_RADIUS = CUBE_WIDTH_UNITS / 2;
+
 // Сколько построек должно поместиться на площадке при данной ступени
 // камеры. Значение непрерывное: во время отъезда камеры ступень дробная.
 function slotsForStage(stage) {
@@ -317,8 +438,103 @@ function plotsForStage(stage) {
   return (slotsForStage(stage) * PROP_EVERY) / (PROP_EVERY - 1);
 }
 
+// Радиус площадки в CITY_UNIT — им ограничен и поиск участка,
+// и сам овал: за ограду объекты не выходят.
+function plateRadiusUnits(stage) {
+  return STEP_UNITS * Math.sqrt(Math.max(1, plotsForStage(stage) - 1)) + EDGE_UNITS;
+}
+
 function propSlotCount(stage) {
   return Math.floor(plotsForStage(Math.max(0, Math.min(MAX_STAGE, stage))) / PROP_EVERY);
+}
+
+// Филлотаксис: угол по золотому сечению, радиус по корню номера.
+// Мировые координаты от масштаба и экрана не зависят — раскладка
+// одинакова при любом размере окна и в любом запуске.
+function plotWorld(plot, seed) {
+  const angle = plot * GOLDEN_ANGLE;
+  const radius = STEP_UNITS * Math.sqrt(Math.max(0, plot));
+  const shift = jitterOf(seed);
+  return {
+    u: Math.cos(angle) * radius + shift.jx * STEP_UNITS,
+    v: Math.sin(angle) * radius + shift.jy * STEP_UNITS
+  };
+}
+
+function jitterOf(seed) {
+  const a = ((seed >>> 3) % 1000) / 1000 - 0.5;
+  const b = ((seed >>> 13) % 1000) / 1000 - 0.5;
+  return { jx: a * 2 * JITTER, jy: b * 2 * JITTER };
+}
+
+// Единый реестр занятых точек: и дома, и деревья, и фонари, и кусты.
+// Пересчитывается только при изменении набора объектов.
+function placesOf(city) {
+  if (city.places && city.placesVersion === city.version) return city.places;
+  const places = [];
+  const all = city.buildings.concat(city.props);
+  for (let i = 0; i < city.pendings.length; i += 1) {
+    const pending = city.pendings[i];
+    if (pending.upgrade) continue;
+    all.push(pending.prop || pending.building);
+  }
+  all.sort((a, b) => a.seq - b.seq);
+  for (let i = 0; i < all.length; i += 1) {
+    const item = all[i];
+    if (item.plot < 0) continue;
+    const point = plotWorld(item.plot, item.seed);
+    places.push({ item, u: point.u, v: point.v, r: radiusOf(item), h: heightOf(item) });
+  }
+  city.places = places;
+  city.placesVersion = city.version;
+  return places;
+}
+
+function isProp(item) {
+  return item.rank !== undefined;
+}
+
+function radiusOf(item) {
+  return isProp(item) ? propRadius(propKind(item.slot, item.rank)) : BUILDING_RADIUS;
+}
+
+function heightOf(item) {
+  return isProp(item)
+    ? propHeightUnits(propKind(item.slot, item.rank))
+    : buildingHeightUnits(item.kind, item.floors);
+}
+
+// Точка свободна, если до каждого соседа есть зазор по основаниям
+// и пара не стоит одна перед другой вплотную по глубине.
+function fits(places, point, radius, height, ignore) {
+  for (let i = 0; i < places.length; i += 1) {
+    const place = places[i];
+    if (place.item === ignore) continue;
+    const du = Math.abs(point.u - place.u);
+    const dv = Math.abs(point.v - place.v);
+    if (Math.hypot(du, dv) < radius + place.r + MIN_GAP) return false;
+    if (du < radius + place.r && dv < DEPTH_CLEAR * Math.max(height, place.h)) return false;
+  }
+  return true;
+}
+
+// Поиск свободного участка для нового объекта: до PLACE_ATTEMPTS попыток
+// по участкам своего класса, дальше площадка считается полной.
+function findPlot(city, item) {
+  const places = placesOf(city);
+  const radius = radiusOf(item);
+  const height = heightOf(item);
+  const limit = plateRadiusUnits(city.stage) - MIN_GAP;
+  let plot = isProp(item) ? plotOfProp(item.slot) : plotOfBuilding(item.index);
+  for (let attempt = 0; attempt < PLACE_ATTEMPTS; attempt += 1) {
+    const point = plotWorld(plot, item.seed);
+    // За ограду выходить нельзя: это уже не площадка.
+    if (Math.hypot(point.u, point.v) + radius <= limit && fits(places, point, radius, height, item)) {
+      return plot;
+    }
+    plot += 1;
+  }
+  return -1;
 }
 
 const tallestCache = new Map();
@@ -352,7 +568,7 @@ function tallestUnits(stage) {
 function geometry(rect, city) {
   const stage = Math.max(0, Math.min(MAX_STAGE, city.stage));
   const plots = plotsForStage(stage);
-  const radiusUnits = STEP_UNITS * Math.sqrt(Math.max(1, plots - 1)) + EDGE_UNITS;
+  const radiusUnits = plateRadiusUnits(stage);
   const tallest = tallestUnits(stage);
   const above = rect.height * PLATE_CENTER_Y - PLATE_MARGIN;
   const below = rect.height * (1 - PLATE_CENTER_Y) - PLATE_MARGIN;
@@ -374,35 +590,20 @@ function geometry(rect, city) {
   };
 }
 
-function jitterOf(seed) {
-  const a = ((seed >>> 3) % 1000) / 1000 - 0.5;
-  const b = ((seed >>> 13) % 1000) / 1000 - 0.5;
-  return { jx: a * 2 * JITTER, jy: b * 2 * JITTER };
-}
-
-// Филлотаксис: угол по золотому сечению, радиус по корню номера.
-function plotPoint(geo, plot, seed) {
-  const angle = plot * GOLDEN_ANGLE;
-  const radius = STEP_UNITS * Math.sqrt(plot);
-  const shift = jitterOf(seed);
-  const u = Math.cos(angle) * radius + shift.jx * STEP_UNITS;
-  const v = Math.sin(angle) * radius + shift.jy * STEP_UNITS;
-  return { x: geo.x + u * geo.unit, y: geo.y + v * geo.unit * geo.aspect, unit: geo.unit };
-}
-
-function buildingPoint(geo, building) {
-  return plotPoint(geo, plotOfBuilding(building.index), building.seed);
-}
-
-function propPoint(geo, slot) {
-  return plotPoint(geo, plotOfProp(slot), hash(slot + 7919));
+// Мировая точка на экране. Единственное место перевода координат:
+// траектория полёта награды считает её каждый кадр, поэтому масштаб
+// и ступень камеры могут меняться прямо во время полёта.
+function screenPoint(geo, point) {
+  return { x: geo.x + point.u * geo.unit, y: geo.y + point.v * geo.unit * geo.aspect, unit: geo.unit };
 }
 
 // Куда летит награда: точка касания земли в городе и масштаб на месте.
 export function rewardPoint(rect, city, pending) {
   const geo = geometry(rect, city);
   if (!pending) return { x: geo.x, y: geo.y, unit: geo.unit };
-  return pending.prop ? propPoint(geo, pending.slot) : buildingPoint(geo, pending.building);
+  const item = pending.prop || pending.building;
+  if (!item || item.plot < 0) return { x: geo.x, y: geo.y, unit: geo.unit };
+  return screenPoint(geo, plotWorld(item.plot, item.seed));
 }
 
 // --- запечённый макет -----------------------------------------------------
@@ -476,27 +677,33 @@ export function drawRipple(ctx, rect, city, ripple) {
 
 // Все объекты макета в одном списке и с явной точкой касания земли:
 // глубина считается по основанию, иначе высокий дом «перекрывает»
-// дерево, которое стоит ближе к зрителю.
+// дерево, которое стоит ближе к зрителю. Награда в полёте своего места
+// в макете ещё не занимает — её рисует сцена.
 function sceneItems(geo, city) {
+  const places = placesOf(city);
   const items = [];
-  // Постройка, которой награда добавляет этаж или ранг, из макета
-  // не убирается: пока награда летит, она должна стоять на месте.
-  // Новая версия выше и шире — при посадке она накрывает старую.
-  for (let slot = 0; slot < city.props.length; slot += 1) {
-    items.push({ prop: true, slot, rank: city.props[slot], point: propPoint(geo, slot) });
-  }
-  for (let i = 0; i < city.buildings.length; i += 1) {
-    const building = city.buildings[i];
-    items.push({ building, floors: building.floors, point: buildingPoint(geo, building) });
+  for (let i = 0; i < places.length; i += 1) {
+    const place = places[i];
+    if (isPending(city, place.item)) continue;
+    items.push({ item: place.item, point: screenPoint(geo, place) });
   }
   items.sort((a, b) => a.point.y - b.point.y);
   return items;
 }
 
-function paintItem(ctx, item) {
-  const unit = item.point.unit;
-  if (item.building) paintBuilding(ctx, item.building, item.point.x, item.point.y, unit, item.floors);
-  else paintProp(ctx, propKind(item.slot, item.rank), item.point.x, item.point.y, unit, hash(item.slot + 31));
+function isPending(city, item) {
+  for (let i = 0; i < city.pendings.length; i += 1) {
+    const pending = city.pendings[i];
+    if (!pending.upgrade && (pending.prop === item || pending.building === item)) return true;
+  }
+  return false;
+}
+
+function paintItem(ctx, entry) {
+  const item = entry.item;
+  const point = entry.point;
+  if (isProp(item)) paintProp(ctx, propKind(item.slot, item.rank), point.x, point.y, point.unit, item.seed);
+  else paintBuilding(ctx, item, point.x, point.y, point.unit, item.floors);
 }
 
 function paintReward(ctx, pending, x, groundY, unit, squash) {
@@ -508,7 +715,8 @@ function paintReward(ctx, pending, x, groundY, unit, squash) {
     ctx.translate(-x, -groundY);
   }
   if (pending.prop) {
-    paintProp(ctx, propKind(pending.slot, pending.rank), x, groundY, unit, hash(pending.slot + 31));
+    const rank = pending.upgrade ? pending.rank : pending.prop.rank;
+    paintProp(ctx, propKind(pending.prop.slot, rank), x, groundY, unit, pending.prop.seed);
   } else {
     const floors = pending.upgrade ? pending.floors : pending.building.floors;
     paintBuilding(ctx, pending.building, x, groundY, unit, floors);
@@ -701,7 +909,10 @@ function paintProp(ctx, kind, x, groundY, unit, seed) {
   if (kind === 'treeLarge') {
     for (let i = 0; i < CROWN_LARGE.length; i += 1) {
       const crown = CROWN_LARGE[i];
-      level = stackBlock(ctx, x, level, half * crown.width, crown.height * unit, green, i === CROWN_LARGE.length - 1);
+      // Верхняя крона утоплена в нижнюю: поставленные встык кубики
+      // читались как два дерева в одной точке, а не как одно.
+      const base = i === 0 ? level : level + CROWN_OVERLAP * unit;
+      level = stackBlock(ctx, x, base, half * crown.width, crown.height * unit, green, i === CROWN_LARGE.length - 1);
     }
     return;
   }

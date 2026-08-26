@@ -96,9 +96,10 @@ function recycle(pool, tween) {
   if (pool.free.length < POOL_LIMIT) pool.free.push(tween);
 }
 
+// Только помечаем мёртвыми: список чистит updateTweens. Обрезать его
+// здесь нельзя — clearTweens зовут из onDone, прямо во время обхода.
 export function clearTweens(pool) {
   for (let i = 0; i < pool.active.length; i += 1) pool.active[i].dead = true;
-  pool.active.length = 0;
 }
 
 export function isBusy(pool) {
