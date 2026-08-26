@@ -9,7 +9,8 @@ import { findHint, findOptimal } from './game/solver.js';
 import { createHistory, pushHistory, popHistory, canUndo, clearHistory } from './game/history.js';
 import { computeLayout, hitTest, slotPosition } from './render/layout.js';
 import { drawScene } from './render/scene.js';
-import { createCity, prepareBuilding, commitBuilding, resetCity, drawBuilding, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding, cameraTarget, setCameraStage, syncCamera, rebuildCity, countColumns, CITY_SCHEMA_VERSION } from './render/city.js';
+import { PALETTE } from './render/iso.js';
+import { createCity, prepareReward, commitReward, resetCity, drawReward, rewardPoint, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding, cameraTarget, setCameraStage, syncCamera, rebuildCity, CITY_SCHEMA_VERSION } from './render/city.js';
 import { createTweenPool, addTween, updateTweens, isBusy, EASING, setTimeScale } from './anim/tween.js';
 import { createFx, updateFx, spawnSplinters, shakeCamera } from './anim/fx.js';
 import * as sfx from './audio/sfx.js';
@@ -30,12 +31,32 @@ const SQUASH_FROM = 0.88;
 const DENY_MS = 220;
 const DENY_CYCLES = 3;
 const DENY_AMPLITUDE = 5;
-const WAVE_STEP_MS = 55;
-const HOUSE_MS = 320;
 const TRANSITION_MS = 550;
 const HINT_SHOW_MS = 3200;
 const WINDOW_STEP_MS = 60;
 const CAMERA_MS = 700;
+// Кульминация уровня — сборка столбика. Вся последовательность задана
+// здесь и нигде больше: волна, кольцо, крышка, щепки, тряска, полёт
+// награды в город и её приземление.
+const WAVE_STEP_MS = 55;
+const WAVE_HOP_STEPS = 2;
+const BURST_AT_MS = 180;
+const BURST_MS = 260;
+const CAP_AT_MS = 220;
+const CAP_MS = 200;
+const CAP_SQUASH_MS = 110;
+const CAP_SQUASH_FROM = 0.86;
+const SPARK_AT_MS = 240;
+const SPARK_COUNT = 8;
+const SPARK_LIFE_MS = 420;
+const SHAKE_AT_MS = 240;
+const REWARD_AT_MS = 300;
+const REWARD_FLIGHT_MS = 520;
+const REWARD_ARC = 0.4;
+const REWARD_SPIN = (25 * Math.PI) / 180;
+const REWARD_LAND_MS = 180;
+const REWARD_SQUASH_FROM = 0.86;
+const RIPPLE_MS = 320;
 const VIBRO_TAKE = 8;
 const VIBRO_PLACE = 12;
 const VIBRO_COMPLETE = 30;
@@ -67,6 +88,11 @@ const app = {
   landing: null,
   wave: null,
   shake: null,
+  burst: null,
+  capAnim: null,
+  reward: null,
+  ripple: null,
+  targets: null,
   hint: null,
   pending: [],
   hintPulse: 0,
@@ -184,6 +210,11 @@ function startLevel(id) {
   app.landing = null;
   app.wave = null;
   app.shake = null;
+  app.burst = null;
+  app.capAnim = null;
+  app.reward = null;
+  app.ripple = null;
+  app.targets = null;
   app.hint = null;
   app.pending.length = 0;
   app.cityAppear = null;
@@ -238,6 +269,8 @@ function onTap(index) {
     if (app.pending.length < PENDING_LIMIT) app.pending.push(index);
     return;
   }
+  // Собранный столбик закрыт крышкой: ни взять, ни положить, ни отказа.
+  if (isPostComplete(app.state.posts[index], app.state.capacity)) return;
   app.hint = null;
   if (!app.hand) {
     takeGroup(index);
@@ -265,8 +298,22 @@ function takeGroup(index) {
       if (app.hand) app.hand.lift = t;
     }
   });
+  updateTargets();
   sfx.playTake();
   vibrate(VIBRO_TAKE);
+}
+
+// Пока группа в руке, подсвечены все столбики, куда её можно положить.
+function updateTargets() {
+  if (!app.hand) {
+    app.targets = null;
+    return;
+  }
+  const targets = app.targets && app.targets.length === app.state.posts.length ? app.targets : new Array(app.state.posts.length);
+  for (let i = 0; i < app.state.posts.length; i += 1) {
+    targets[i] = canMove(app.state.posts, app.hand.from, i, app.state.capacity);
+  }
+  app.targets = targets;
 }
 
 function returnGroup() {
@@ -281,6 +328,7 @@ function returnGroup() {
     },
     onDone: () => {
       app.hand = null;
+      app.targets = null;
       app.busy = false;
     }
   });
@@ -327,6 +375,7 @@ function startFlight(to) {
   const peak = Math.min(startY, end.y) - ARC_HEIGHT;
 
   app.hand = null;
+  app.targets = null;
   app.hidden = { post: from, count };
   app.busy = true;
   app.flight = { color, count, x: start.x, y: startY, groundY: layout.posts[to].baseY };
@@ -364,13 +413,15 @@ function finishFlight(from, to, count, color, end) {
     }
   });
 
-  spawnSplinters(app.fx, end.x, end.y, color);
+  spawnSplinters(app.fx, end.x, end.y, PALETTE[color % PALETTE.length]);
   sfx.playPlace();
   vibrate(VIBRO_PLACE);
   updateHud();
 
   if (isPostComplete(app.state.posts[to], app.state.capacity)) {
-    completePost(to, color);
+    // Дом даётся за пройденный уровень: если этот столбик его закрывает,
+    // в город летит дом, иначе — декорация.
+    completePost(to, color, isSolved(app.state.posts, app.state.capacity));
     return;
   }
   addTween(app.tweens, {
@@ -382,50 +433,161 @@ function finishFlight(from, to, count, color, end) {
   });
 }
 
-function completePost(index, color) {
+function completePost(index, color, solving) {
+  const layout = app.layout;
+  const post = layout.posts[index];
+  const capacity = app.state.capacity;
+  const topY = slotPosition(layout, index, capacity - 1).y;
+  app.busy = true;
   sfx.playComplete();
   vibrate(VIBRO_COMPLETE);
-  shakeCamera(app.fx);
-  const waveDuration = WAVE_STEP_MS * (app.state.capacity + 2);
+
+  // 0 мс — волна подпрыгивания снизу вверх.
   app.wave = { post: index, t: 0 };
   addTween(app.tweens, {
-    duration: waveDuration,
+    duration: WAVE_STEP_MS * (capacity + WAVE_HOP_STEPS),
     onUpdate: (t) => {
-      if (app.wave) app.wave.t = t * (app.state.capacity + 1);
+      if (app.wave) app.wave.t = t * (capacity + WAVE_HOP_STEPS);
     },
     onDone: () => {
       app.wave = null;
     }
   });
 
-  // На заполненной площадке новая постройка не добавляется — этаж
-  // получает существующее здание, анимация та же.
-  const pending = prepareBuilding(app.city, color, app.level);
+  // +180 мс — вспышка-кольцо от основания стопки наружу.
+  addTween(app.tweens, {
+    delay: BURST_AT_MS,
+    duration: BURST_MS,
+    onStart: () => {
+      app.burst = { post: index, t: 0 };
+    },
+    onUpdate: (t) => {
+      if (app.burst) app.burst.t = t;
+    },
+    onDone: () => {
+      app.burst = null;
+    }
+  });
+
+  // +220 мс — крышка падает сверху и садится с отскоком.
+  app.capAnim = { post: index, visible: false, lift: 1, squash: 1 };
+  addTween(app.tweens, {
+    delay: CAP_AT_MS,
+    duration: CAP_MS,
+    easing: EASING.easeOutBack,
+    onStart: () => {
+      if (app.capAnim) app.capAnim.visible = true;
+    },
+    onUpdate: (t) => {
+      if (app.capAnim) app.capAnim.lift = 1 - t;
+    },
+    onDone: settleCap
+  });
+
+  // +240 мс — щепки и тряска камеры.
+  addTween(app.tweens, {
+    delay: SPARK_AT_MS,
+    duration: SHAKE_AT_MS - SPARK_AT_MS + 1,
+    onStart: () => {
+      if (app.fx.reducedMotion) return;
+      spawnSplinters(app.fx, post.x, topY, PALETTE[color % PALETTE.length], SPARK_COUNT, SPARK_LIFE_MS);
+      shakeCamera(app.fx);
+    }
+  });
+
+  // +300 мс — награда вылетает из стопки и летит в город.
+  const pending = prepareReward(app.city, color, app.level, solving);
+  if (!pending) {
+    addTween(app.tweens, { delay: REWARD_AT_MS, duration: 1, onDone: finishComplete });
+    return;
+  }
+  const target = rewardPoint(app.layout.city, app.city, pending);
+  const startUnit = layout.step * post.scale;
+  const arc = Math.hypot(target.x - post.x, target.y - topY) * REWARD_ARC;
+  app.reward = { pending, flying: false, x: post.x, y: topY, unit: startUnit, angle: 0 };
+  addTween(app.tweens, {
+    delay: REWARD_AT_MS,
+    duration: REWARD_FLIGHT_MS,
+    easing: EASING.easeInOutQuad,
+    onStart: () => {
+      if (app.reward) app.reward.flying = true;
+    },
+    onUpdate: (t) => {
+      const reward = app.reward;
+      if (!reward) return;
+      reward.x = post.x + (target.x - post.x) * t;
+      // Парабола: дуга поднимается на 40% расстояния до города.
+      reward.y = topY + (target.y - topY) * t - 4 * arc * t * (1 - t);
+      reward.unit = startUnit + (target.unit - startUnit) * t;
+      reward.angle = Math.sin(t * Math.PI) * REWARD_SPIN;
+    },
+    onDone: () => landReward(pending, target, !pending.prop)
+  });
+}
+
+// Крышка села: щелчок и короткий squash.
+function settleCap() {
+  sfx.playCap();
+  if (!app.capAnim) return;
+  app.capAnim.lift = 0;
+  app.capAnim.squash = CAP_SQUASH_FROM;
+  addTween(app.tweens, {
+    duration: CAP_SQUASH_MS,
+    easing: EASING.easeOutBack,
+    onUpdate: (t) => {
+      if (app.capAnim) app.capAnim.squash = CAP_SQUASH_FROM + (1 - CAP_SQUASH_FROM) * t;
+    },
+    onDone: () => {
+      // Дальше крышку рисует сцена по состоянию столбика.
+      app.capAnim = null;
+    }
+  });
+}
+
+// +820 мс — награда приземлилась: отскок, волна по площадке, и только
+// после этого она попадает в макет.
+function landReward(pending, target, house) {
+  sfx.playLand();
+  app.reward = null;
+  app.ripple = { x: target.x, y: target.y, t: 0 };
+  addTween(app.tweens, {
+    duration: RIPPLE_MS,
+    onUpdate: (t) => {
+      if (app.ripple) app.ripple.t = t;
+    },
+    onDone: () => {
+      app.ripple = null;
+    }
+  });
   app.cityAppear = {
-    t: 0,
-    draw(target, rect) {
-      drawBuilding(target, rect, app.city, pending, this.t);
+    squash: REWARD_SQUASH_FROM,
+    draw(ctx, rect) {
+      drawReward(ctx, rect, app.city, pending, this.squash);
     }
   };
   addTween(app.tweens, {
-    duration: HOUSE_MS,
+    duration: REWARD_LAND_MS,
     easing: EASING.easeOutBack,
     onUpdate: (t) => {
-      if (app.cityAppear) app.cityAppear.t = t;
+      if (app.cityAppear) app.cityAppear.squash = REWARD_SQUASH_FROM + (1 - REWARD_SQUASH_FROM) * t;
     },
     onDone: () => {
       app.cityAppear = null;
-      commitBuilding(app.city, pending);
+      commitReward(app.city, pending);
       persist();
-      const district = completedDistrict(app.city);
+      const district = house ? completedDistrict(app.city) : -1;
       if (district >= 0) {
         lightDistrict(district);
         return;
       }
-      app.busy = false;
-      checkWin();
+      finishComplete();
     }
   });
+}
+
+function finishComplete() {
+  app.busy = false;
+  checkWin();
 }
 
 // Район завершён: окна загораются волной слева направо. Свет остаётся
@@ -463,8 +625,7 @@ function moveCamera() {
   const from = app.city.stage;
   const to = cameraTarget(app.city);
   if (Math.abs(to - from) < 0.001) {
-    app.busy = false;
-    checkWin();
+    finishComplete();
     return;
   }
   addTween(app.tweens, {
@@ -475,8 +636,7 @@ function moveCamera() {
     },
     onDone: () => {
       setCameraStage(app.city, to);
-      app.busy = false;
-      checkWin();
+      finishComplete();
     }
   });
 }
@@ -552,6 +712,8 @@ async function requestUndo() {
   app.state.moves = snapshot.moves;
   restoreCity(app.city, snapshot.city);
   app.hand = null;
+  app.targets = null;
+  app.capAnim = null;
   app.hidden = null;
   app.undoUsed += 1;
   sfx.playTake();
@@ -568,6 +730,7 @@ async function requestHint() {
     return;
   }
   app.hand = null;
+  app.targets = null;
   app.hint = move;
   app.hintUntil = app.time + HINT_SHOW_MS;
   app.hintsUsed += 1;
@@ -581,6 +744,7 @@ async function requestExtraPost() {
   app.state.posts.push([]);
   app.extraPostUsed = true;
   app.hand = null;
+  app.targets = null;
   clearHistory(app.history);
   rebuildLayout();
   updateHud();
@@ -601,9 +765,19 @@ function persist() {
     level: app.progress.level,
     citySchemaVersion: CITY_SCHEMA_VERSION,
     city: app.city.buildings,
+    props: app.city.props,
     muted: app.settings.muted,
     vibro: app.settings.vibro
   });
+}
+
+// Сколько столбиков собрано за пройденные уровни: по одному на цвет.
+function columnsFor(levels) {
+  let total = 0;
+  for (let i = 0; i < levels; i += 1) {
+    total += LEVELS[Math.min(i, LEVELS.length - 1)].colors;
+  }
+  return total;
 }
 
 async function restore() {
@@ -612,16 +786,17 @@ async function restore() {
   app.progress.level = Math.max(1, Number(data.level) || 1);
   app.settings.muted = Boolean(data.muted);
   app.settings.vibro = data.vibro !== false;
-  if (Array.isArray(data.city)) {
-    // Сохранение старой версии не читаем по частям: город собирается
-    // заново по актуальным правилам из числа собранных столбиков.
-    if (data.citySchemaVersion === CITY_SCHEMA_VERSION) {
-      app.city.buildings = data.city.slice();
-      syncCamera(app.city);
-      app.city.dirty = true;
-    } else {
-      rebuildCity(app.city, countColumns(data.city));
-    }
+  // Сохранение старой версии не читаем по частям: город собирается
+  // заново по актуальным правилам — из числа пройденных уровней (дома)
+  // и числа собранных за них столбиков (декорации).
+  if (data.citySchemaVersion === CITY_SCHEMA_VERSION && Array.isArray(data.city)) {
+    app.city.buildings = data.city.slice();
+    app.city.props = Array.isArray(data.props) ? data.props.slice() : [];
+    syncCamera(app.city);
+    app.city.dirty = true;
+  } else {
+    const passed = app.progress.level - 1;
+    rebuildCity(app.city, passed, columnsFor(passed));
   }
   sfx.setMuted(app.settings.muted);
 }
@@ -653,12 +828,31 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// Признак «столбик собран» пересчитывается каждый кадр: массив один
+// и тот же, в цикле отрисовки мусора не создаём.
+const completed = [];
+
+function updateCompleted() {
+  const posts = app.state ? app.state.posts : [];
+  completed.length = posts.length;
+  for (let i = 0; i < posts.length; i += 1) {
+    completed[i] = isPostComplete(posts[i], app.state.capacity);
+  }
+}
+
 function render() {
   if (!app.layout) return;
+  updateCompleted();
   drawScene(ctx, {
     layout: app.layout,
     dpr: app.dpr,
     posts: app.state ? app.state.posts : [],
+    completed,
+    targets: app.targets,
+    capAnim: app.capAnim,
+    burst: app.burst,
+    reward: app.reward,
+    ripple: app.ripple,
     city: app.city,
     cityAppear: app.cityAppear,
     hand: app.hand,

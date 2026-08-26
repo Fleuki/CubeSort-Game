@@ -7,6 +7,10 @@ import { drawShadow } from './shadow.js';
 export const PALETTE = ['#D4553F', '#E2A238', '#5B9750', '#3B71A4', '#7A57A3', '#3E9E93', '#C9628C'];
 export const SKY_TOP = '#F2EADA';
 export const TABLE = '#DFD0B4';
+// Фон игровой зоны на 6-7% темнее стола и заметно холоднее: жёлтый
+// кубик на тёплом песке сливался с фоном. Оттенок подобран по
+// максимуму цветового расстояния до самой светлой грани палитры.
+export const FIELD = '#D0C6B0';
 export const WOOD = '#9A7B52';
 export const WOOD_DARK = '#7E6242';
 export const INK = '#2E2A24';
@@ -26,9 +30,20 @@ const BASE_THICKNESS = 5;
 // Подставка светлее тени, иначе низ стопки смазывается в тёмное пятно.
 const BASE_TONE = 0.1;
 const BASE_SHADOW_SPREAD = 1.35;
+// Выемка в пустой подставке: пустой столбик — главный ресурс игрока,
+// он должен находиться взглядом мгновенно.
+const RECESS_DARK = -0.26;
+const RECESS_EDGE_LIGHT = 0.22;
+// Подсветка допустимой цели хода. Статичная, не мигает.
+const TARGET_RING = 'rgba(255, 255, 255, 0.22)';
+const TARGET_RING_WIDTH = 2.5;
+// Крышка собранного столбика — та же плита, что на плоских крышах города.
+const CAP_OVERHANG = 0.08;
+const CAP_HEIGHT = 0.18;
+const CAP_DARK = -0.18;
 // Символ на боковой грани: доля ширины грани.
-const SYMBOL_SCALE = 0.34;
-const SYMBOL_DARK = -0.4;
+const SYMBOL_SCALE = 0.44;
+const SYMBOL_DARK = -0.52;
 const SYMBOL_LIGHT = 0.18;
 // Выступ: кубики соединяются друг с другом, как детали конструктора.
 // Он всегда один и всегда по центру — разные выступы у разных рядов
@@ -53,25 +68,24 @@ const SYMBOLS = ['circle', 'square', 'triangle', 'cross', 'star', 'diamond', 'ri
 
 const shadeCache = new Map();
 
+function channels(hex) {
+  if (hex.charCodeAt(0) === 35) {
+    const num = parseInt(hex.slice(1), 16);
+    return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+  }
+  // Осветлять уже осветлённый цвет — обычное дело, поэтому rgb() тоже парсим.
+  const parts = hex.match(/\d+/g);
+  return [Number(parts[0]), Number(parts[1]), Number(parts[2])];
+}
+
 export function shade(hex, amount) {
   const key = `${hex}${amount}`;
   const cached = shadeCache.get(key);
   if (cached) return cached;
-  let r;
-  let g;
-  let b;
-  if (hex.charCodeAt(0) === 35) {
-    const num = parseInt(hex.slice(1), 16);
-    r = (num >> 16) & 255;
-    g = (num >> 8) & 255;
-    b = num & 255;
-  } else {
-    // Осветлять уже осветлённый цвет — обычное дело, поэтому rgb() тоже парсим.
-    const parts = hex.match(/\d+/g);
-    r = Number(parts[0]);
-    g = Number(parts[1]);
-    b = Number(parts[2]);
-  }
+  const parsed = channels(hex);
+  let r = parsed[0];
+  let g = parsed[1];
+  let b = parsed[2];
   if (amount >= 0) {
     r += (255 - r) * amount;
     g += (255 - g) * amount;
@@ -84,6 +98,15 @@ export function shade(hex, amount) {
   const result = `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
   shadeCache.set(key, result);
   return result;
+}
+
+// Смесь двух цветов: нужна, чтобы стык зон остался тем же цветом,
+// что и раньше, а ниже него фон уходил в другой тон.
+export function mix(from, to, t) {
+  const a = channels(from);
+  const b = channels(to);
+  const k = Math.max(0, Math.min(1, t));
+  return `rgb(${Math.round(a[0] + (b[0] - a[0]) * k)}, ${Math.round(a[1] + (b[1] - a[1]) * k)}, ${Math.round(a[2] + (b[2] - a[2]) * k)})`;
 }
 
 export function cubeSideHeight(size) {
@@ -161,6 +184,20 @@ export function drawStud(ctx, x, y, size, base) {
   ctx.strokeStyle = shade(base, STUD_STROKE_DARK);
   ctx.lineWidth = OUTLINE_WIDTH;
   stud(ctx, x, y, radius, cubeSideHeight(size) * STUD_HEIGHT, base);
+}
+
+// Крышка собранного столбика: плоская плита поверх верхнего кубика.
+// Признак «столбик готов» должен читаться за долю секунды, а не
+// вычитываться из совпадения цветов.
+export function drawCap(ctx, x, topY, size, colorIndex, squash = 1) {
+  const base = shade(PALETTE[colorIndex % PALETTE.length], CAP_DARK);
+  const half = size * (1 + CAP_OVERHANG);
+  const height = cubeSideHeight(size) * CAP_HEIGHT * squash;
+  drawBlock(ctx, x, topY - height, half, base, height / cubeSideHeight(half));
+}
+
+export function capHeight(size) {
+  return cubeSideHeight(size) * CAP_HEIGHT;
 }
 
 function stud(ctx, x, y, rx, height, base) {
@@ -270,7 +307,7 @@ function symbolPath(ctx, kind, r, dy) {
 
 // Подставка: круглая деревянная площадка. Пустой столбик — это только она.
 // (x, baseY) — центр нижней грани нижнего кубика, он же центр подставки.
-export function drawPostBase(ctx, x, baseY, size) {
+export function drawPostBase(ctx, x, baseY, size, empty = false) {
   const baseRx = size * BASE_RADIUS_RATIO;
   const baseRy = baseRx / 2;
   const thickness = Math.max(2, BASE_THICKNESS * (size / 30));
@@ -292,9 +329,39 @@ export function drawPostBase(ctx, x, baseY, size) {
   ctx.beginPath();
   ctx.ellipse(x, baseY, baseRx, baseRy, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = shade(WOOD, BASE_TONE - 0.2);
-  ctx.lineWidth = 1;
+  if (empty) drawRecess(ctx, x, baseY, size);
+  else {
+    ctx.strokeStyle = shade(WOOD, BASE_TONE - 0.2);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(x, baseY, baseRx * 0.74, baseRy * 0.74, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+// Кольцо по краю выемки у пустого столбика и по краю подставки у занятого.
+// Рисуется поверх кубиков: под ними подставку почти не видно, а игрок
+// должен видеть все допустимые цели, пока держит группу.
+export function drawTargetRing(ctx, x, baseY, size, empty) {
+  const rx = empty ? size : size * BASE_RADIUS_RATIO;
+  ctx.strokeStyle = TARGET_RING;
+  ctx.lineWidth = TARGET_RING_WIDTH;
   ctx.beginPath();
-  ctx.ellipse(x, baseY, baseRx * 0.74, baseRy * 0.74, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, baseY, rx, rx / 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+// Вдавленная выемка под кубик: тёмный эллипс размером с нижнюю грань
+// плюс светлая дуга по нижнему краю — иначе выемка читается как пятно.
+function drawRecess(ctx, x, baseY, size) {
+  const top = shade(WOOD, BASE_TONE);
+  ctx.fillStyle = shade(top, RECESS_DARK);
+  ctx.beginPath();
+  ctx.ellipse(x, baseY, size, size / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = shade(top, RECESS_EDGE_LIGHT);
+  ctx.lineWidth = Math.max(1, size * 0.05);
+  ctx.beginPath();
+  ctx.ellipse(x, baseY, size * 0.94, size * 0.47, 0, 0.15 * Math.PI, 0.85 * Math.PI);
   ctx.stroke();
 }

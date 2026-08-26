@@ -107,6 +107,18 @@ export function playComplete() {
   tone(PENTATONIC[4] * 2, CHORD_MS, 'triangle', 0.16, 0.06);
 }
 
+// Крышка встала на место: короткий деревянный щелчок и низкий тон.
+export function playCap() {
+  click(0.34);
+  tone(196, 90, 'triangle', 0.2);
+}
+
+// Награда приземлилась в городе: мягкий низкий удар.
+export function playLand() {
+  tone(98, 260, 'sine', 0.3);
+  tone(147, 160, 'triangle', 0.12, 0.02);
+}
+
 export function playDeny() {
   tone(DENY_FREQ, DENY_MS, 'sine', 0.3);
 }

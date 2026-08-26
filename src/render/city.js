@@ -14,9 +14,11 @@ import {
 
 // Версия схемы города. Не совпала с сохранением — город пересобирается
 // с нуля по актуальным правилам, прогресс уровней при этом цел.
-export const CITY_SCHEMA_VERSION = 3;
+export const CITY_SCHEMA_VERSION = 4;
 
 // Ступени застройки: тип новой постройки зависит от того, сколько их уже.
+// Дом даётся за пройденный уровень, поэтому пороги растянуты на десятки
+// уровней — этап одноэтажных домиков должен успеть прожиться.
 const HOUSE1_UNTIL = 8;
 const HOUSE2_UNTIL = 20;
 const BLOCK3_UNTIL = 40;
@@ -37,9 +39,11 @@ const GOLDEN_ANGLE = (137.507 * Math.PI) / 180;
 // требуемый зазор в 0.25 и вынос кроны большого дерева.
 const STEP_UNITS = 2.85;
 const JITTER = 0.05;
-// Каждый шестой участок отдан озеленению — деревья стоят между домами,
-// а не жмутся к ограде.
-const PROP_EVERY = 6;
+// Каждый четвёртый участок отдан озеленению: кусты и деревья приходят
+// за собранные столбики, и мест под них нужно заметно больше, чем под дома.
+const PROP_EVERY = 4;
+const PROP_MAX_RANK = 2;
+const LAMP_EVERY = 4;
 // Запас от крайней постройки до ограды: половина кубика плюс поле.
 const EDGE_UNITS = CUBE_WIDTH_UNITS / 2 + 0.5;
 
@@ -50,6 +54,9 @@ const PLATE_ASPECT = 0.5;
 const MIN_PLATE_ASPECT = 0.36;
 const PLATE_MARGIN = 8;
 const FENCE_RADIUS = 0.97;
+const FENCE_POSTS = 9;
+const FENCE_POST_SCALE = 0.35;
+const FENCE_POST_HEIGHT = 0.8;
 // Стартовый масштаб: одноэтажный домик занимает эту долю высоты зоны,
 // если такой город помещается в неё целиком.
 const START_HOUSE_SHARE = 0.14;
@@ -59,74 +66,112 @@ const ROOF_DARK = -0.18;
 // Пятно тени шире основания: под самим кубиком его не видно —
 // низ детали накрывает пятно целиком.
 const SHADOW_SPREAD = 1.6;
+// Волна по площадке в момент приземления награды.
+const RIPPLE_FROM = 0.3;
+const RIPPLE_TO = 2.2;
+const RIPPLE_ALPHA = 0.3;
 const CROWN_COLORS = ['#5B9750', '#4C8547'];
 const LAMP_HEAD_COLOR = '#E2A238';
 
-export function createCity(buildings = []) {
-  const city = { buildings: buildings.slice(), pending: null, stage: 0, dirty: true, canvas: null, ctx: null };
+export function createCity(buildings = [], props = []) {
+  const city = {
+    buildings: buildings.slice(),
+    props: props.slice(),
+    pending: null,
+    stage: 0,
+    dirty: true,
+    canvas: null,
+    ctx: null
+  };
   syncCamera(city);
   return city;
 }
 
-// Что появится за очередной собранный столбик: новая постройка или,
-// если площадка заполнена, этаж случайному существующему зданию.
-export function prepareBuilding(city, colorIndex, level) {
+// Награда за ход: за пройденный уровень — дом, за отдельный собранный
+// столбик — мелкая декорация по кругу площадки.
+export function prepareReward(city, colorIndex, level, house) {
   city.dirty = true;
-  if (city.buildings.length >= MAX_BUILDINGS) {
-    const target = pickUpgrade(city, level);
-    city.pending = target ? { building: target, upgrade: true, floors: target.floors + 1 } : null;
-    return city.pending;
-  }
-  city.pending = { building: makeBuilding(city.buildings.length, colorIndex), upgrade: false };
+  city.pending = house ? prepareBuilding(city, colorIndex, level) : prepareProp(city);
   return city.pending;
 }
 
-export function commitBuilding(city, pending) {
+function prepareBuilding(city, colorIndex, level) {
+  if (city.buildings.length >= MAX_BUILDINGS) {
+    const target = pickUpgrade(city, level);
+    return target ? { building: target, upgrade: true, floors: target.floors + 1 } : null;
+  }
+  return { building: makeBuilding(city.buildings.length, colorIndex), upgrade: false };
+}
+
+// Свободный участок под декорацию, а если все заняты — подрастает
+// самая мелкая: куст становится деревом, дерево — большим деревом.
+function prepareProp(city) {
+  const slots = propSlotCount(city.stage);
+  if (city.props.length < slots) return { prop: true, slot: city.props.length, rank: 0 };
+  let best = -1;
+  for (let slot = 0; slot < city.props.length; slot += 1) {
+    if (city.props[slot] >= maxRankOf(slot)) continue;
+    if (best < 0 || city.props[slot] < city.props[best]) best = slot;
+  }
+  if (best >= 0) return { prop: true, slot: best, rank: city.props[best] + 1 };
+  // Расти уже некуда: награда всё равно долетает и приземляется на свой
+  // участок — момент сборки столбика не должен оставаться без реакции.
+  if (city.props.length === 0) return null;
+  const slot = hash(city.props.length + city.buildings.length) % city.props.length;
+  return { prop: true, slot, rank: city.props[slot] };
+}
+
+export function commitReward(city, pending) {
   if (!pending) return;
-  if (pending.upgrade) pending.building.floors = pending.floors;
-  else city.buildings.push(pending.building);
+  if (pending.prop) {
+    if (pending.slot < city.props.length) city.props[pending.slot] = pending.rank;
+    else city.props.push(pending.rank);
+  } else if (pending.upgrade) {
+    pending.building.floors = pending.floors;
+  } else {
+    city.buildings.push(pending.building);
+  }
   city.pending = null;
   city.dirty = true;
 }
 
 export function resetCity(city) {
   city.buildings.length = 0;
+  city.props.length = 0;
   city.pending = null;
   syncCamera(city);
   city.dirty = true;
 }
 
-// Сколько столбиков собрано всего: постройки плюс надстроенные этажи.
-export function countColumns(buildings) {
-  let total = 0;
-  for (let i = 0; i < buildings.length; i += 1) total += Math.max(1, Number(buildings[i].floors) || 1);
-  return total;
-}
-
-// Миграция: город собирается заново из числа собранных столбиков.
-// Порядок построек, цвета и свет полностью определяются этим числом.
-export function rebuildCity(city, columns) {
-  const total = Math.max(0, Math.floor(columns) || 0);
-  const count = Math.min(MAX_BUILDINGS, total);
+// Миграция: город собирается заново из числа пройденных уровней
+// (дома) и числа собранных столбиков (декорации).
+export function rebuildCity(city, levels, columns) {
+  const count = Math.min(MAX_BUILDINGS, Math.max(0, Math.floor(levels) || 0));
   city.buildings.length = 0;
+  city.props.length = 0;
   city.pending = null;
   for (let i = 0; i < count; i += 1) city.buildings.push(makeBuilding(i, migratedColor(i)));
-  for (let extra = 0; extra < total - count; extra += 1) {
-    const target = pickUpgrade(city, extra);
+  const extra = Math.max(0, (Math.floor(levels) || 0) - count);
+  for (let i = 0; i < extra; i += 1) {
+    const target = pickUpgrade(city, i);
     if (target) target.floors += 1;
   }
   const districts = Math.floor(count / DISTRICT_SIZE);
   for (let i = 0; i < count; i += 1) city.buildings[i].lit = city.buildings[i].district < districts;
   syncCamera(city);
+  for (let i = 0; i < Math.max(0, Math.floor(columns) || 0); i += 1) {
+    commitReward(city, prepareProp(city));
+  }
   city.dirty = true;
 }
 
-// Снимок для отмены хода: меняться могут число построек, этажность,
-// свет и ступень камеры.
+// Снимок для отмены хода: меняться могут постройки, декорации,
+// этажность, свет и ступень камеры.
 export function snapshotCity(city) {
   return {
     count: city.buildings.length,
     stage: city.stage,
+    props: city.props.slice(),
     floors: city.buildings.map((building) => building.floors),
     lit: city.buildings.map((building) => building.lit)
   };
@@ -139,6 +184,8 @@ export function restoreCity(city, snapshot) {
     city.buildings[i].floors = snapshot.floors[i];
     city.buildings[i].lit = snapshot.lit[i];
   }
+  city.props.length = 0;
+  for (let i = 0; i < snapshot.props.length; i += 1) city.props.push(snapshot.props[i]);
   city.pending = null;
   city.stage = snapshot.stage;
   city.dirty = true;
@@ -239,8 +286,24 @@ function plotOfBuilding(order) {
   return order + Math.floor(order / (PROP_EVERY - 1));
 }
 
-function isPropPlot(plot) {
-  return plot % PROP_EVERY === PROP_EVERY - 1;
+function plotOfProp(slot) {
+  return slot * PROP_EVERY + PROP_EVERY - 1;
+}
+
+// Фонарь вместо дерева на каждом LAMP_EVERY-м участке: город должен
+// быть не только зелёным.
+function isLampSlot(slot) {
+  return hash(slot + 4099) % LAMP_EVERY === 0;
+}
+
+function maxRankOf(slot) {
+  return isLampSlot(slot) ? 1 : PROP_MAX_RANK;
+}
+
+function propKind(slot, rank) {
+  if (rank <= 0) return 'bush';
+  if (isLampSlot(slot)) return 'lamp';
+  return rank === 1 ? 'treeSmall' : 'treeLarge';
 }
 
 // Сколько построек должно поместиться на площадке при данной ступени
@@ -252,6 +315,10 @@ function slotsForStage(stage) {
 // Участков больше, чем построек: часть отдана озеленению.
 function plotsForStage(stage) {
   return (slotsForStage(stage) * PROP_EVERY) / (PROP_EVERY - 1);
+}
+
+function propSlotCount(stage) {
+  return Math.floor(plotsForStage(Math.max(0, Math.min(MAX_STAGE, stage))) / PROP_EVERY);
 }
 
 const tallestCache = new Map();
@@ -327,6 +394,17 @@ function buildingPoint(geo, building) {
   return plotPoint(geo, plotOfBuilding(building.index), building.seed);
 }
 
+function propPoint(geo, slot) {
+  return plotPoint(geo, plotOfProp(slot), hash(slot + 7919));
+}
+
+// Куда летит награда: точка касания земли в городе и масштаб на месте.
+export function rewardPoint(rect, city, pending) {
+  const geo = geometry(rect, city);
+  if (!pending) return { x: geo.x, y: geo.y, unit: geo.unit };
+  return pending.prop ? propPoint(geo, pending.slot) : buildingPoint(geo, pending.building);
+}
+
 // --- запечённый макет -----------------------------------------------------
 
 // Отдельный offscreen: макет перерисовывается при изменении, а не каждый кадр.
@@ -349,25 +427,50 @@ export function getCityCanvas(city, rect) {
     city.ctx.clearRect(0, 0, w, h);
     drawGround(city.ctx, geo, city);
     const items = sceneItems(geo, city);
-    for (let i = 0; i < items.length; i += 1) paintItem(city.ctx, items[i], 1);
+    for (let i = 0; i < items.length; i += 1) paintItem(city.ctx, items[i]);
     city.dirty = false;
   }
   return city.canvas;
 }
 
-// Постройка в момент появления: рисуется поверх запечённого макета.
-export function drawBuilding(ctx, rect, city, pending, appear) {
+// Награда в момент приземления: рисуется поверх запечённого макета
+// со сплющиванием по вертикали — это её отскок.
+export function drawReward(ctx, rect, city, pending, squash) {
   if (!pending) return;
-  const geo = geometry(rect, city);
+  const point = rewardPoint(rect, city, pending);
   ctx.save();
   ctx.beginPath();
   ctx.rect(rect.x, rect.y, rect.width, rect.height);
   ctx.clip();
-  paintItem(ctx, {
-    building: pending.building,
-    floors: pending.upgrade ? pending.floors : pending.building.floors,
-    point: buildingPoint(geo, pending.building)
-  }, appear);
+  paintReward(ctx, pending, point.x, point.y, point.unit, squash);
+  ctx.restore();
+}
+
+// Награда в полёте: та же деталь, только с поворотом и своим масштабом.
+export function drawRewardAt(ctx, pending, x, y, unit, angle) {
+  if (!pending) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.translate(-x, -y);
+  paintReward(ctx, pending, x, y, unit, 1);
+  ctx.restore();
+}
+
+// Лёгкая волна по площадке от места приземления.
+export function drawRipple(ctx, rect, city, ripple) {
+  const geo = geometry(rect, city);
+  const radius = geo.unit * CUBE_WIDTH_UNITS * (RIPPLE_FROM + (RIPPLE_TO - RIPPLE_FROM) * ripple.t);
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(geo.x, geo.y, geo.rx, geo.ry, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.globalAlpha = RIPPLE_ALPHA * (1 - ripple.t);
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = Math.max(1, geo.unit * 0.12);
+  ctx.beginPath();
+  ctx.ellipse(ripple.x, ripple.y, radius, radius * geo.aspect, 0, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -376,39 +479,41 @@ export function drawBuilding(ctx, rect, city, pending, appear) {
 // дерево, которое стоит ближе к зрителю.
 function sceneItems(geo, city) {
   const items = [];
-  const limit = Math.ceil(geo.plots);
-  for (let plot = 0; plot < limit; plot += 1) {
-    if (!isPropPlot(plot)) continue;
-    const seed = hash(plot + 7919);
-    const point = plotPoint(geo, plot, seed);
-    items.push({ kind: propKind(plot, seed), point, seed });
+  // Постройка, которой награда добавляет этаж или ранг, из макета
+  // не убирается: пока награда летит, она должна стоять на месте.
+  // Новая версия выше и шире — при посадке она накрывает старую.
+  for (let slot = 0; slot < city.props.length; slot += 1) {
+    items.push({ prop: true, slot, rank: city.props[slot], point: propPoint(geo, slot) });
   }
   for (let i = 0; i < city.buildings.length; i += 1) {
     const building = city.buildings[i];
-    if (city.pending && city.pending.upgrade && city.pending.building === building) continue;
     items.push({ building, floors: building.floors, point: buildingPoint(geo, building) });
   }
   items.sort((a, b) => a.point.y - b.point.y);
   return items;
 }
 
-function propKind(plot, seed) {
-  const roll = seed % 10;
-  if (roll < 4) return 'treeSmall';
-  if (roll < 6) return 'treeLarge';
-  if (roll < 8) return 'bush';
-  return plot > DISTRICT_SIZE ? 'lamp' : 'bush';
+function paintItem(ctx, item) {
+  const unit = item.point.unit;
+  if (item.building) paintBuilding(ctx, item.building, item.point.x, item.point.y, unit, item.floors);
+  else paintProp(ctx, propKind(item.slot, item.rank), item.point.x, item.point.y, unit, hash(item.slot + 31));
 }
 
-function paintItem(ctx, item, appear) {
-  const unit = item.point.unit;
-  const height = item.building
-    ? buildingHeightUnits(item.building.kind, item.floors) * unit
-    : propHeightUnits(item.kind) * unit;
-  // Постройка выезжает снизу: поднимаем точку касания, а не сам объект.
-  const y = item.point.y + (1 - appear) * (height + unit * 0.6);
-  if (item.building) paintBuilding(ctx, item.building, item.point.x, y, unit, item.floors);
-  else paintProp(ctx, item.kind, item.point.x, y, unit, item.seed);
+function paintReward(ctx, pending, x, groundY, unit, squash) {
+  const scaled = squash !== 1;
+  if (scaled) {
+    ctx.save();
+    ctx.translate(x, groundY);
+    ctx.scale(1, squash);
+    ctx.translate(-x, -groundY);
+  }
+  if (pending.prop) {
+    paintProp(ctx, propKind(pending.slot, pending.rank), x, groundY, unit, hash(pending.slot + 31));
+  } else {
+    const floors = pending.upgrade ? pending.floors : pending.building.floors;
+    paintBuilding(ctx, pending.building, x, groundY, unit, floors);
+  }
+  if (scaled) ctx.restore();
 }
 
 // --- участок --------------------------------------------------------------
@@ -443,40 +548,36 @@ function drawRoad(ctx, geo) {
   ctx.restore();
 }
 
-// Забор идёт по краю овала, нижние концы столбиков касаются поверхности.
+// Забор по краю овала: столбики — те же кубики в масштабе 0.35,
+// перекладины между ними. Линия в один пиксель на этом фоне пропадала.
 function drawFence(ctx, geo) {
-  const posts = 9;
   const points = [];
-  for (let i = 0; i < posts; i += 1) {
-    const angle = Math.PI * (1.12 + (i / (posts - 1)) * 0.76);
+  for (let i = 0; i < FENCE_POSTS; i += 1) {
+    const angle = Math.PI * (1.12 + (i / (FENCE_POSTS - 1)) * 0.76);
     points.push({
       x: geo.x + Math.cos(angle) * geo.rx * FENCE_RADIUS,
       y: geo.y + Math.sin(angle) * geo.ry * FENCE_RADIUS
     });
   }
-  const height = geo.unit * 0.5;
+  const half = cubeHalf(geo.unit) * FENCE_POST_SCALE;
+  const height = geo.unit * FENCE_POST_HEIGHT;
   // Одна вытянутая тень на всю дугу, а не пятно под каждой секцией.
-  drawShadowAlong(ctx, points, height, geo.unit * 0.2);
-  ctx.strokeStyle = shade(WOOD, -0.08);
-  ctx.lineWidth = Math.max(1.2, geo.unit * 0.05);
+  drawShadowAlong(ctx, points, height, half * 2 * SHADOW_SPREAD);
+  ctx.strokeStyle = shade(WOOD, -0.24);
+  ctx.lineWidth = Math.max(1.5, geo.unit * 0.1);
+  ctx.lineCap = 'round';
   for (let rail = 0; rail < 2; rail += 1) {
+    const lift = height * (rail === 0 ? 0.86 : 0.46);
     ctx.beginPath();
-    const lift = height * (rail === 0 ? 0.78 : 0.38);
     for (let i = 0; i < points.length; i += 1) {
-      const px = points[i].x;
       const py = points[i].y - lift;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
+      if (i === 0) ctx.moveTo(points[i].x, py);
+      else ctx.lineTo(points[i].x, py);
     }
     ctx.stroke();
   }
   for (let i = 0; i < points.length; i += 1) {
-    const edge = i === 0 || i === points.length - 1;
-    ctx.lineWidth = Math.max(1.2, geo.unit * (edge ? 0.08 : 0.05));
-    ctx.beginPath();
-    ctx.moveTo(points[i].x, points[i].y);
-    ctx.lineTo(points[i].x, points[i].y - height * (edge ? 1.25 : 1));
-    ctx.stroke();
+    drawBlock(ctx, points[i].x, points[i].y - height, half, WOOD, height / cubeSideHeight(half));
   }
 }
 

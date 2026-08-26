@@ -30,17 +30,29 @@ export function createTweenPool() {
   return { active: [], free: [] };
 }
 
+// delay откладывает старт: последовательность из шести реакций на сборку
+// столбика собирается из твинов с задержками, а не из вложенных onDone.
+// onStart вызывается, когда задержка вышла — до этого твин ничего не делает.
 export function addTween(pool, options) {
   const tween = pool.free.pop() || {};
   tween.time = 0;
+  tween.delay = (options.delay || 0) * timeScale;
   tween.duration = Math.max(1, options.duration * timeScale);
   tween.easing = options.easing || EASING.linear;
+  tween.onStart = options.onStart || null;
   tween.onUpdate = options.onUpdate || null;
   tween.onDone = options.onDone || null;
+  tween.started = false;
   tween.dead = false;
   pool.active.push(tween);
-  if (tween.onUpdate) tween.onUpdate(0);
+  if (tween.delay <= 0) start(tween);
   return tween;
+}
+
+function start(tween) {
+  tween.started = true;
+  if (tween.onStart) tween.onStart();
+  if (tween.onUpdate) tween.onUpdate(0);
 }
 
 export function updateTweens(pool, dt) {
@@ -53,6 +65,15 @@ export function updateTweens(pool, dt) {
       continue;
     }
     tween.time += dt;
+    if (!tween.started) {
+      if (tween.time < tween.delay) {
+        active[write] = tween;
+        write += 1;
+        continue;
+      }
+      tween.time -= tween.delay;
+      start(tween);
+    }
     const raw = Math.min(1, tween.time / tween.duration);
     if (tween.onUpdate) tween.onUpdate(tween.easing(raw));
     if (raw >= 1) {
@@ -69,6 +90,7 @@ export function updateTweens(pool, dt) {
 }
 
 function recycle(pool, tween) {
+  tween.onStart = null;
   tween.onUpdate = null;
   tween.onDone = null;
   if (pool.free.length < POOL_LIMIT) pool.free.push(tween);

@@ -11,23 +11,26 @@ const SHAKE_AMPLITUDE = 4;
 export function createFx() {
   const particles = new Array(PARTICLE_LIMIT);
   for (let i = 0; i < PARTICLE_LIMIT; i += 1) {
-    particles[i] = { alive: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, size: 0, color: '#000', spin: 0, angle: 0 };
+    particles[i] = { alive: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 0, color: '#000', spin: 0, angle: 0 };
   }
   return { particles, next: 0, shake: 0, shakeTime: 0, shakeX: 0, shakeY: 0, reducedMotion: false };
 }
 
-export function spawnSplinters(fx, x, y, color) {
-  for (let i = 0; i < PARTICLE_COUNT; i += 1) {
+// count и life задаются вызывающим: на посадке щепок шесть, на сборке
+// столбика — восемь и живут они дольше.
+export function spawnSplinters(fx, x, y, color, count = PARTICLE_COUNT, life = PARTICLE_LIFE) {
+  for (let i = 0; i < count; i += 1) {
     const particle = fx.particles[fx.next];
     fx.next = (fx.next + 1) % PARTICLE_LIMIT;
-    const angle = (Math.PI * 2 * i) / PARTICLE_COUNT + Math.random() * 0.4;
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
     const speed = 0.05 + Math.random() * 0.09;
     particle.alive = true;
     particle.x = x;
     particle.y = y;
     particle.vx = Math.cos(angle) * speed;
     particle.vy = -Math.abs(Math.sin(angle)) * speed - 0.05;
-    particle.life = PARTICLE_LIFE;
+    particle.life = life;
+    particle.maxLife = life;
     particle.size = 2 + Math.random() * 2.5;
     particle.color = color;
     particle.angle = Math.random() * Math.PI;
@@ -71,7 +74,7 @@ export function drawParticles(ctx, fx) {
   for (let i = 0; i < fx.particles.length; i += 1) {
     const particle = fx.particles[i];
     if (!particle.alive) continue;
-    const alpha = Math.max(0, Math.min(1, particle.life / PARTICLE_LIFE));
+    const alpha = Math.max(0, Math.min(1, particle.life / particle.maxLife));
     ctx.globalAlpha = alpha;
     ctx.fillStyle = particle.color;
     ctx.translate(particle.x, particle.y);

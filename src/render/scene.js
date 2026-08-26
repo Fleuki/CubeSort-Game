@@ -1,18 +1,29 @@
 // Отрисовка кадра целиком. Модуль только читает view — состояние
 // игры он не меняет.
 
-import { drawCube, drawPostBase, drawStuds, SKY_TOP, TABLE, INK, shade } from './iso.js';
+import { drawCube, drawPostBase, drawStuds, drawCap, drawTargetRing, SKY_TOP, TABLE, FIELD, INK, mix, shade } from './iso.js';
 import { drawShadow } from './shadow.js';
-import { getCityCanvas } from './city.js';
+import { getCityCanvas, drawRewardAt, drawRipple } from './city.js';
 import { slotPosition } from './layout.js';
 import { drawParticles } from '../anim/fx.js';
+import { EASING } from '../anim/tween.js';
 
 const HINT_ALPHA = 0.9;
-const WAVE_HEIGHT = 0.5;
-const WAVE_SPAN = 0.45;
+// Подскок кубика в волне — доля его собственной высоты.
+const WAVE_RISE = 0.06;
+// Подскок длится два шага волны: за один шаг глаз его не успевает поймать.
+const WAVE_HOP_STEPS = 2;
 const HAND_SHADOW_FADE = 0.6;
 const FLIGHT_SHADOW_FADE = 0.7;
-
+// Стык зон: мягкий переход, а не линия.
+const ZONE_BLEND = 40;
+// Вспышка-кольцо при сборке столбика: радиус в ширинах кубика.
+const BURST_FROM = 0.4;
+const BURST_TO = 1.8;
+const BURST_ALPHA = 0.5;
+const BURST_WIDTH = 2.5;
+// Крышка падает с высоты 1.2 кубика.
+const CAP_DROP = 1.2;
 
 export function drawScene(ctx, view) {
   const { layout, fx } = view;
@@ -22,9 +33,11 @@ export function drawScene(ctx, view) {
   ctx.translate(fx.shakeX, fx.shakeY);
   drawCity(ctx, view);
   drawPosts(ctx, view);
+  drawBurst(ctx, view);
   drawHand(ctx, view);
   drawFlight(ctx, view);
   drawParticles(ctx, fx);
+  drawFlyingReward(ctx, view);
   ctx.translate(-fx.shakeX, -fx.shakeY);
   if (view.fade > 0) {
     ctx.globalAlpha = view.fade;
@@ -34,22 +47,29 @@ export function drawScene(ctx, view) {
   }
 }
 
+// Небо и стол над городом остаются прежними, ниже зоны города фон уходит
+// в более тёмный и холодный тон: жёлтый кубик на светлом песке пропадал.
 function drawBackground(ctx, layout) {
-  const gradient = ctx.createLinearGradient(0, 0, 0, layout.height);
+  const cityBottom = layout.city.y + layout.city.height;
+  const height = layout.height;
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  const seam = Math.min(0.999, cityBottom / height);
   gradient.addColorStop(0, SKY_TOP);
-  gradient.addColorStop(0.55, TABLE);
-  gradient.addColorStop(1, shade(TABLE, -0.08));
+  // Цвет на стыке — ровно тот, что давал прежний градиент: выше стыка
+  // ничего не меняется.
+  gradient.addColorStop(seam, mix(SKY_TOP, TABLE, Math.min(1, seam / 0.55)));
+  gradient.addColorStop(Math.min(0.999, (cityBottom + ZONE_BLEND) / height), FIELD);
+  gradient.addColorStop(1, shade(FIELD, -0.08));
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, layout.width, layout.height);
+  ctx.fillRect(0, 0, layout.width, height);
 }
 
 function drawCity(ctx, view) {
   const rect = view.layout.city;
   const canvas = getCityCanvas(view.city, rect);
   ctx.drawImage(canvas, rect.x, rect.y);
-  if (view.cityAppear) {
-    view.cityAppear.draw(ctx, rect);
-  }
+  if (view.ripple) drawRipple(ctx, rect, view.city, view.ripple);
+  if (view.cityAppear) view.cityAppear.draw(ctx, rect);
 }
 
 function postOffset(view, index) {
@@ -64,43 +84,87 @@ function drawPosts(ctx, view) {
     const post = layout.posts[i];
     const size = layout.size * post.scale;
     const step = layout.step * post.scale;
-    ctx.translate(dx, 0);
-    drawPostBase(ctx, post.x, post.baseY, size);
-    if (view.hint && (view.hint.from === i || view.hint.to === i)) {
-      drawHintMark(ctx, layout, post, view.hintPulse, view.hint.from === i);
-    }
     // Кубики, поднятые в руку или летящие, со штыря убираются —
     // иначе группа рисуется дважды.
     let hiddenTop = view.hidden && view.hidden.post === i ? view.hidden.count : 0;
     if (view.hand && view.hand.from === i) hiddenTop += view.hand.count;
     const visible = posts[i].length - hiddenTop;
+    ctx.translate(dx, 0);
+    drawPostBase(ctx, post.x, post.baseY, size, visible === 0);
+    if (view.hint && (view.hint.from === i || view.hint.to === i)) {
+      drawHintMark(ctx, layout, post, view.hintPulse, view.hint.from === i);
+    }
     for (let slot = 0; slot < visible; slot += 1) {
       const pos = slotPosition(layout, i, slot);
-      const wave = waveOffset(view, i, slot, size);
+      const wave = waveOffset(view, i, slot, step);
       const squash = landingSquash(view, i, slot);
       drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash);
     }
-    // Выступы видны только у верхнего кубика: у остальных верхнюю грань
-    // закрывает следующий кубик.
+    // Кольцо цели — поверх кубиков, иначе его закрывает нижний кубик.
+    if (view.targets && view.targets[i]) drawTargetRing(ctx, post.x, post.baseY, size, visible === 0);
     if (visible > 0) {
       const top = slotPosition(layout, i, visible - 1);
-      drawStuds(ctx, top.x, top.y - waveOffset(view, i, visible - 1, size), size, posts[i][visible - 1]);
+      const topY = top.y - waveOffset(view, i, visible - 1, step);
+      const cap = capState(view, i);
+      // Собранный столбик закрыт крышкой, и выступ под ней не нужен —
+      // крышка на него и надета.
+      if (cap) {
+        if (cap.visible) drawCap(ctx, top.x, topY - cap.lift * step * CAP_DROP, size, posts[i][visible - 1], cap.squash);
+      } else {
+        drawStuds(ctx, top.x, topY, size, posts[i][visible - 1]);
+      }
     }
     ctx.translate(-dx, 0);
   }
 }
 
-function waveOffset(view, postIndex, slot, size) {
+// null — крышки нет; иначе состояние падения. Пока крышка не показана,
+// у столбика не рисуется ни она, ни выступ.
+function capState(view, index) {
+  if (!view.completed || !view.completed[index]) return null;
+  if (view.capAnim && view.capAnim.post === index) return view.capAnim;
+  return STATIC_CAP;
+}
+
+const STATIC_CAP = { visible: true, lift: 0, squash: 1 };
+
+function waveOffset(view, postIndex, slot, step) {
   if (!view.wave || view.wave.post !== postIndex) return 0;
-  const local = view.wave.t - slot * WAVE_SPAN;
+  const local = (view.wave.t - slot) / WAVE_HOP_STEPS;
   if (local <= 0 || local >= 1) return 0;
-  return Math.sin(local * Math.PI) * size * WAVE_HEIGHT;
+  const shape = local < 0.5 ? EASING.easeOutBack(local * 2) : (1 - local) * 2;
+  return shape * step * WAVE_RISE;
 }
 
 function landingSquash(view, postIndex, slot) {
   if (!view.landing || view.landing.post !== postIndex) return 1;
   if (slot < view.landing.fromSlot) return 1;
   return view.landing.squash;
+}
+
+// Вспышка-кольцо от основания собранной стопки наружу.
+function drawBurst(ctx, view) {
+  if (!view.burst) return;
+  const post = view.layout.posts[view.burst.post];
+  const width = view.layout.cubeWidth * post.scale;
+  const t = view.burst.t;
+  const radius = width * (BURST_FROM + (BURST_TO - BURST_FROM) * t);
+  ctx.save();
+  ctx.globalAlpha = BURST_ALPHA * (1 - t);
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = BURST_WIDTH;
+  ctx.beginPath();
+  ctx.ellipse(post.x, post.baseY, radius, radius / 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Награда летит со стопки в город: связь поля и города должна быть видна,
+// а не подразумеваться.
+function drawFlyingReward(ctx, view) {
+  const reward = view.reward;
+  if (!reward || !reward.flying) return;
+  drawRewardAt(ctx, reward.pending, reward.x, reward.y, reward.unit, reward.angle);
 }
 
 // Подсказка: кольцо у подставки плюс стрелка над штырём. Одного кольца
