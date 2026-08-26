@@ -1674,6 +1674,7 @@ const LAMP_EVERY = 4;
 // уже стоящих остаётся зазор. Не нашлось места за столько попыток —
 // площадка считается полной.
 const PLACE_ATTEMPTS = 40;
+const PLOT_SLACK = 1.15;
 const MIN_GAP = 0.25;
 // Изометрия сжимает глубину, поэтому мало развести основания: объект,
 // стоящий прямо перед другим, закрывает его телом. Пары, у которых
@@ -1752,7 +1753,7 @@ function touch(city) {
 // Награда за ход: за пройденный уровень — дом, за отдельный собранный
 // столбик — мелкая декорация по кругу площадки.
 function prepareReward(city, colorIndex, level, house) {
-  const pending = house ? prepareBuilding(city, colorIndex, level) : prepareProp(city);
+  const pending = house ? prepareBuilding(city, colorIndex, level) : prepareProp(city, level);
   if (pending) {
     city.pendings.push(pending);
     touch(city);
@@ -1775,42 +1776,120 @@ function prepareBuilding(city, colorIndex, level) {
 
 // Свободный участок под декорацию, а если все заняты — подрастает
 // самая мелкая: куст становится деревом, дерево — большим деревом.
-function prepareProp(city) {
-  const slot = city.props.length + countPending(city, true);
-  if (slot < propSlotCount(city.stage)) {
-    const prop = { slot, seq: nextSeq(city), rank: 0, seed: hash(slot + 7919), plot: -1 };
-    prop.plot = findPlot(city, prop);
-    if (prop.plot >= 0) return { prop, upgrade: false };
-    city.seq -= 1;
+// Лестница выбора цели. Каждый собранный столбик обязан дать ровно одно
+// видимое изменение, поэтому порядок такой: сначала подрастить самое
+// мелкое, потом занять новое место, и только в тупике — этаж зданию.
+function prepareProp(city, level) {
+  const before = visualHash(city, null);
+  for (let step = 0; step < LADDER.length; step += 1) {
+    const pending = LADDER[step](city, level);
+    if (!pending) continue;
+    if (visualHash(city, pending) !== before) return pending;
+    // Предохранитель: выбранная цель ничего не меняет — это ошибка
+    // выбора, а не нормальный ход. Возвращаем место и идём дальше.
+    reportBurned(step);
+    releasePending(city, pending);
   }
-  const grown = pickGrowth(city);
-  if (grown) return grown;
-  // Расти уже некуда: награда всё равно долетает и приземляется на свой
-  // участок — момент сборки столбика не должен оставаться без реакции.
-  if (city.props.length === 0) return null;
-  const target = city.props[hash(city.props.length + city.buildings.length) % city.props.length];
-  return { prop: target, upgrade: true, rank: target.rank };
+  // Ни один пункт лестницы не дал цели: площадка занята целиком, все
+  // декорации в максимальной стадии, все дома упёрлись в потолок высоты.
+  // Это не ошибка выбора, а физический предел макета.
+  return null;
 }
 
-// Самая мелкая декорация, которой хватит места вырасти.
-function pickGrowth(city) {
-  let best = null;
+const LADDER = [
+  (city) => growPending(city, 0),
+  (city) => growPending(city, 1),
+  (city) => freshPending(city),
+  (city, level) => buildingFloorPending(city, level)
+];
+
+// Самая ранняя декорация нужной стадии, которой хватает места вырасти:
+// город растёт от центра наружу, а не скачет. Стадия берётся с учётом
+// награды, которая уже летит к этому объекту.
+function growPending(city, rank) {
   for (let i = 0; i < city.props.length; i += 1) {
     const prop = city.props[i];
-    if (prop.rank >= maxRankOf(prop.slot)) continue;
-    if (best && prop.rank >= best.rank) continue;
-    if (!growthFits(city, prop)) continue;
-    best = prop;
+    const stage = effectiveStage(city, prop, prop.rank);
+    if (stage !== rank || isLampSlot(prop.slot) || stage >= PROP_MAX_RANK) continue;
+    if (!growthFits(city, prop, stage + 1)) continue;
+    return { prop, upgrade: true, rank: stage + 1 };
   }
-  return best ? { prop: best, upgrade: true, rank: best.rank + 1 } : null;
+  return null;
+}
+
+// Стадия объекта с учётом уже летящих наград: две подряд не должны
+// целиться в один и тот же куст.
+function effectiveStage(city, item, fallback) {
+  for (let i = 0; i < city.pendings.length; i += 1) {
+    const pending = city.pendings[i];
+    if (!pending.upgrade) continue;
+    if (pending.prop === item) return pending.rank;
+    if (pending.building === item) return pending.floors;
+  }
+  return fallback;
+}
+
+// Новый участок: куст, а на вехах застройки — фонарь.
+function freshPending(city) {
+  const slot = city.props.length + countPending(city, true);
+  if (slot >= propSlotCount(city.stage)) return null;
+  const prop = { slot, seq: nextSeq(city), rank: 0, seed: hash(slot + 7919), plot: -1 };
+  prop.plot = findPlot(city, prop);
+  if (prop.plot >= 0) return { prop, upgrade: false };
+  city.seq -= 1;
+  return null;
+}
+
+function buildingFloorPending(city, level) {
+  const target = pickUpgrade(city, level);
+  return target ? { building: target, upgrade: true, floors: effectiveStage(city, target, target.floors) + 1 } : null;
+}
+
+// Отменённая заготовка не должна съедать номер создания.
+function releasePending(city, pending) {
+  if (pending && !pending.upgrade && pending.prop && pending.prop.seq === city.seq) city.seq -= 1;
 }
 
 // Выросшая крона шире прежней — проверяем, что она никого не задевает.
-function growthFits(city, prop) {
+function growthFits(city, prop, rank) {
   const point = plotWorld(prop.plot, prop.seed);
-  const radius = propRadius(propKind(prop.slot, prop.rank + 1));
-  const height = propHeightUnits(propKind(prop.slot, prop.rank + 1));
-  return fits(placesOf(city), point, radius, height, prop);
+  const kind = propKind(prop.slot, rank);
+  return fits(placesOf(city), point, propRadius(kind), propHeightUnits(kind), prop);
+}
+
+// Хеш видимого состояния города: тип, стадия, этажность и участок
+// каждого объекта. Награды в полёте учитываются — две подряд не должны
+// целиться в один и тот же куст.
+function visualHash(city, extra) {
+  const places = placesOf(city);
+  let h = 2166136261;
+  for (let i = 0; i < places.length; i += 1) h = mixItem(h, city, places[i].item, extra);
+  if (extra && !extra.upgrade) h = mixItem(h, city, extra.prop || extra.building, extra);
+  return h >>> 0;
+}
+
+const KIND_CODES = { bush: 1, treeSmall: 2, treeLarge: 3, lamp: 4, house1: 5, house2: 6, block3: 7, block4: 8, landmark: 9 };
+
+function mixItem(h, city, item, extra) {
+  const prop = isProp(item);
+  let stage = effectiveStage(city, item, prop ? item.rank : item.floors);
+  if (extra && extra.upgrade) {
+    if (extra.prop === item) stage = extra.rank;
+    else if (extra.building === item) stage = extra.floors;
+  }
+  const kind = prop ? propKind(item.slot, stage) : item.kind;
+  return mix32(mix32(mix32(h, KIND_CODES[kind] || 0), stage), item.plot + 1);
+}
+
+function mix32(h, value) {
+  return (Math.imul(h ^ (value >>> 0), 16777619) >>> 0);
+}
+
+// Предохранитель молчит всю игру. Заговорил — в выборе цели ошибка.
+function reportBurned(step) {
+  if (typeof console !== 'undefined' && console.warn) {
+    console.warn(`[city] награда не изменила город: пункт лестницы ${step + 1}`);
+  }
 }
 
 function countPending(city, prop) {
@@ -2002,13 +2081,27 @@ function migratedColor(order) {
   return (order * 3 + Math.floor(order / PALETTE.length)) % PALETTE.length;
 }
 
-// Детерминированно «случайное» здание: от номера уровня, а не от
-// Math.random, иначе после отмены хода этаж уедет другому дому.
+// Сколько этажей город уже надстроил: часть seed выбора здания.
+function addedFloors(city) {
+  let total = 0;
+  for (let i = 0; i < city.buildings.length; i += 1) total += city.buildings[i].floors - 1;
+  for (let i = 0; i < city.pendings.length; i += 1) {
+    const pending = city.pendings[i];
+    if (pending.upgrade && pending.building) total += 1;
+  }
+  return total;
+}
+
+// Детерминированно «случайное» здание: от номера уровня и числа уже
+// выданных этажей, а не от Math.random, иначе после отмены хода этаж
+// уедет другому дому.
 // Стопка выше MAX_CUBES не растёт — ищем следующую подходящую.
 function pickUpgrade(city, level) {
   const count = city.buildings.length;
   if (count === 0) return null;
-  const start = hash(level) % count;
+  // Seed меняется с каждым выданным этажом, иначе все столбики уровня
+  // уходили в один и тот же дом и он один вырастал в башню.
+  const start = hash(level * 1000 + addedFloors(city)) % count;
   for (let i = 0; i < count; i += 1) {
     const building = city.buildings[(start + i) % count];
     if (buildingCubes(building.kind, building.floors + 1) > buildingCubes(building.kind, building.floors)) {
@@ -2020,9 +2113,9 @@ function pickUpgrade(city, level) {
 
 // --- раскладка ------------------------------------------------------------
 
-// Участки нумеруются подряд, каждый PROP_EVERY-й отдан озеленению.
-// Это только точка, с которой начинается поиск: занята — берём следующий
-// участок того же класса.
+// Номер участка, с которого начинается поиск места. Дома и озеленение
+// расходятся по разным номерам, чтобы не толкаться с первой попытки,
+// но занятость решает реестр, а не эта нумерация.
 function plotOfBuilding(order) {
   return order + Math.floor(order / (PROP_EVERY - 1));
 }
@@ -2037,15 +2130,14 @@ function isLampSlot(slot) {
   return hash(slot + 4099) % LAMP_EVERY === 0;
 }
 
-function maxRankOf(slot) {
-  return isLampSlot(slot) ? 1 : PROP_MAX_RANK;
-}
-
+// Фонарь стадий не имеет: он ставится сразу фонарём и целью апгрейда
+// не бывает никогда. Расти умеют только куст и малое дерево.
 function propKind(slot, rank) {
-  if (rank <= 0) return 'bush';
   if (isLampSlot(slot)) return 'lamp';
+  if (rank <= 0) return 'bush';
   return rank === 1 ? 'treeSmall' : 'treeLarge';
 }
+
 
 function propRadius(kind) {
   return propWidthUnits(kind) / 2;
@@ -2059,9 +2151,12 @@ function slotsForStage(stage) {
   return Math.min(MAX_BUILDINGS, DISTRICT_SIZE * (stage + 1));
 }
 
-// Участков больше, чем построек: часть отдана озеленению.
+// Участков больше, чем построек: часть отдана озеленению, плюс запас
+// на поиск. Без запаса первый же пропущенный участок выталкивал дом
+// за площадку, дом не вставал, ступень камеры не росла — и город
+// застревал навсегда.
 function plotsForStage(stage) {
-  return (slotsForStage(stage) * PROP_EVERY) / (PROP_EVERY - 1);
+  return (slotsForStage(stage) * PROP_EVERY * PLOT_SLACK) / (PROP_EVERY - 1);
 }
 
 // Радиус площадки в CITY_UNIT — им ограничен и поиск участка,
@@ -2070,8 +2165,10 @@ function plateRadiusUnits(stage) {
   return STEP_UNITS * Math.sqrt(Math.max(1, plotsForStage(stage) - 1)) + EDGE_UNITS;
 }
 
+// Мест под озеленение столько же, сколько было до запаса: запас нужен
+// поиску, а не декорациям.
 function propSlotCount(stage) {
-  return Math.floor(plotsForStage(Math.max(0, Math.min(MAX_STAGE, stage))) / PROP_EVERY);
+  return Math.floor(slotsForStage(Math.max(0, Math.min(MAX_STAGE, stage))) / (PROP_EVERY - 1));
 }
 
 // Филлотаксис: угол по золотому сечению, радиус по корню номера.
