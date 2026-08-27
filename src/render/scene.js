@@ -1,7 +1,7 @@
 // Отрисовка кадра целиком. Модуль только читает view — состояние
 // игры он не меняет.
 
-import { drawCube, drawPostBase, drawStuds, drawCap, SKY_TOP, TABLE, FIELD, INK, mix, shade } from './iso.js';
+import { drawCube, drawPostBase, drawStuds, drawCap, drawSlotOutline, PALETTE, SKY_TOP, TABLE, FIELD, INK, OUTLINE_DARK, SLOT_ALPHA, mix, shade } from './iso.js';
 import { drawShadow } from './shadow.js';
 import { getCityCanvas, drawReward, drawRewardAt, drawRipple } from './city.js';
 import { slotPosition } from './layout.js';
@@ -24,6 +24,13 @@ const BURST_ALPHA = 0.5;
 const BURST_WIDTH = 2.5;
 // Крышка падает с высоты 1.2 кубика.
 const CAP_DROP = 1.2;
+// Отказ по нехватке места: ромбы свободных слотов на миг наливаются.
+const SLOT_FLASH_ALPHA = 0.45;
+// Отказ по цвету: обводка спорящих кубиков светлеет на 40%.
+const DENY_FLASH_LIGHT = 0.4;
+// Ступень квантования вспышки: кеш оттенков не должен пухнуть от
+// каждого промежуточного значения твина.
+const FLASH_STEPS = 20;
 
 export function drawScene(ctx, view) {
   const { layout, fx } = view;
@@ -97,12 +104,16 @@ function drawPosts(ctx, view) {
     if (view.hint && (view.hint.from === i || view.hint.to === i)) {
       drawHintMark(ctx, layout, post, view.hintPulse, view.hint.from === i);
     }
+    // Вспышка обводки при отказе по цвету — только верхнему кубику цели.
+    const flash = denyFlash(view, i, 'color');
     for (let slot = 0; slot < visible; slot += 1) {
       const pos = slotPosition(layout, i, slot);
       const wave = waveOffset(view, i, slot, step);
       const squash = landingSquash(view, i, slot);
-      drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash);
+      const lit = flash > 0 && slot === visible - 1 ? flashOutline(posts[i][slot], flash) : null;
+      drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash, lit);
     }
+    drawFreeSlots(ctx, view, i, post, size);
     if (visible > 0) {
       const top = slotPosition(layout, i, visible - 1);
       const topY = top.y - waveOffset(view, i, visible - 1, step);
@@ -114,6 +125,32 @@ function drawPosts(ctx, view) {
     }
     ctx.translate(-dx, 0);
   }
+}
+
+// Свободные слоты: ромбы на тех высотах, где стояли бы кубики. Счёт идёт
+// по состоянию столбика, а не по видимым кубикам, — поэтому поднятая
+// в руку группа ромбов не добавляет.
+function drawFreeSlots(ctx, view, index, post, size) {
+  const height = view.posts[index].length;
+  if (height >= view.capacity) return;
+  const alpha = SLOT_ALPHA + (SLOT_FLASH_ALPHA - SLOT_ALPHA) * denyFlash(view, index, 'space');
+  for (let slot = height; slot < view.capacity; slot += 1) {
+    const pos = slotPosition(view.layout, index, slot);
+    drawSlotOutline(ctx, pos.x, pos.y, size, alpha);
+  }
+}
+
+// Сила вспышки отказа нужного вида для этого столбика: 0 — вспышки нет.
+function denyFlash(view, index, kind) {
+  const deny = view.deny;
+  if (!deny || deny.kind !== kind || deny.index !== index) return 0;
+  return deny.flash;
+}
+
+function flashOutline(colorIndex, flash) {
+  const base = PALETTE[colorIndex % PALETTE.length];
+  const step = Math.round(flash * FLASH_STEPS) / FLASH_STEPS;
+  return shade(shade(base, -OUTLINE_DARK), DENY_FLASH_LIGHT * step);
 }
 
 // null — крышки нет; иначе состояние падения. Пока крышка не долетела,
@@ -223,10 +260,14 @@ function drawHand(ctx, view) {
   // так видно, что группа в воздухе.
   drawShadow(ctx, post.x, post.baseY, baseSlot * layout.step * post.scale, size * 2, HAND_SHADOW_FADE);
   let topY = 0;
+  // При отказе по цвету группа в руке вспыхивает вместе с кубиком цели:
+  // видно, какие именно два цвета сравниваются.
+  const flash = view.deny && view.deny.kind === 'color' ? view.deny.flash : 0;
+  const lit = flash > 0 ? flashOutline(hand.color, flash) : null;
   for (let i = 0; i < hand.count; i += 1) {
     const pos = slotPosition(layout, hand.from, baseSlot + i);
     topY = pos.y - lift;
-    drawCube(ctx, post.x + hand.bob, topY, size, hand.color, 1);
+    drawCube(ctx, post.x + hand.bob, topY, size, hand.color, 1, lit);
   }
   drawStuds(ctx, post.x + hand.bob, topY, size, hand.color);
 }

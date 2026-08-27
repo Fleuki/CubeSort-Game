@@ -115,6 +115,13 @@ const MONUMENT_STEPS = [
 ];
 // Радиус шире здания: вокруг памятника остаётся просвет, иначе его
 // закрывают соседние башни.
+// Навершие: у каждого материала своё, иначе три памятника отличались бы
+// только тоном обводки. Всё вместе — не выше 0.6 кубика.
+const FINIAL_POLE = 0.5;
+const FINIAL_FLAG = 0.36;
+const FINIAL_BALL = 0.28;
+const FINIAL_SPIRE = 0.42;
+const FINIAL_ANTENNA = 0.18;
 const MONUMENT_RADIUS = CUBE_WIDTH_UNITS;
 const MONUMENT_HEIGHT = MONUMENT_PEDESTAL.height + MONUMENT_STEPS.reduce((sum, step) => sum + step.height, 0);
 const styleCache = new Map();
@@ -933,11 +940,73 @@ function paintMonument(ctx, monument, x, groundY, unit, material, rise) {
   ctx.clip();
   let level = groundY + hidden;
   level = stackBlock(ctx, x, level, half * MONUMENT_PEDESTAL.width, MONUMENT_PEDESTAL.height * unit, monument.color, false, style);
+  let top = half;
   for (let i = 0; i < MONUMENT_STEPS.length; i += 1) {
     const step = MONUMENT_STEPS[i];
-    level = stackBlock(ctx, x, level, half * step.width, step.height * unit, monument.color, i === MONUMENT_STEPS.length - 1, style);
+    top = half * step.width;
+    level = stackBlock(ctx, x, level, top, step.height * unit, monument.color, i === MONUMENT_STEPS.length - 1, style);
   }
+  monumentFinial(ctx, material, x, level, top, unit, monument.color, style);
   ctx.restore();
+}
+
+// Навершие в цвет медали: дерево — флажок на древке, камень — шар,
+// стекло — шпиль с антенной.
+function monumentFinial(ctx, material, x, topY, half, unit, color, style) {
+  const outline = style && style.outline ? style.outline : shade(color, -OUTLINE_DARK);
+  ctx.strokeStyle = outline;
+  ctx.lineWidth = OUTLINE_WIDTH;
+  ctx.lineJoin = 'round';
+  if (material === 'stone') {
+    const radius = FINIAL_BALL * unit;
+    ctx.fillStyle = shade(color, 0.14);
+    ctx.beginPath();
+    ctx.arc(x, topY - radius, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Блик снизу слева: без него шар читается плоским кругом.
+    ctx.fillStyle = shade(color, -0.2);
+    ctx.beginPath();
+    ctx.arc(x, topY - radius, radius, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.fill();
+    ctx.stroke();
+    return;
+  }
+  if (material === 'glass') {
+    const apex = topY - FINIAL_SPIRE * unit;
+    const w = half * 0.55;
+    triangle(ctx, x - w, topY, x, topY + w * 0.5, x, apex, shade(color, -0.14));
+    triangle(ctx, x + w, topY, x, topY + w * 0.5, x, apex, shade(color, -0.34));
+    ctx.strokeStyle = shade(color, -0.4);
+    ctx.lineWidth = Math.max(1, unit * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(x, apex);
+    ctx.lineTo(x, apex - FINIAL_ANTENNA * unit);
+    ctx.stroke();
+    ctx.fillStyle = shade(color, 0.2);
+    ctx.beginPath();
+    ctx.arc(x, apex - FINIAL_ANTENNA * unit, Math.max(1, unit * 0.07), 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  const poleTop = topY - FINIAL_POLE * unit;
+  ctx.lineWidth = Math.max(1, unit * 0.06);
+  ctx.strokeStyle = shade(color, -0.4);
+  ctx.beginPath();
+  ctx.moveTo(x, topY);
+  ctx.lineTo(x, poleTop);
+  ctx.stroke();
+  const flag = FINIAL_FLAG * unit;
+  ctx.strokeStyle = outline;
+  ctx.lineWidth = OUTLINE_WIDTH;
+  ctx.fillStyle = shade(color, 0.12);
+  ctx.beginPath();
+  ctx.moveTo(x, poleTop);
+  ctx.lineTo(x + flag, poleTop + flag * 0.34);
+  ctx.lineTo(x, poleTop + flag * 0.68);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
 }
 
 function paintReward(ctx, pending, x, groundY, unit, squash, material) {

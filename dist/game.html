@@ -684,6 +684,20 @@ function canMove(posts, from, to, capacity) {
   return true;
 }
 
+// Причина отказа для наглядной реакции: 'color' — верхние кубики разного
+// цвета, 'space' — группа не влезает. null — ход разрешён или отказ
+// не из-за этих двух причин (перекладывание целой стопки на пустой штырь).
+// Правила ходов здесь не решаются: это разбор того, что вернул canMove.
+function moveBlocker(posts, from, to, capacity) {
+  if (canMove(posts, from, to, capacity)) return null;
+  const group = takeTopGroup(posts, from);
+  if (!group) return null;
+  const target = posts[to];
+  if (target.length > 0 && target[target.length - 1] !== group.color) return 'color';
+  if (freeSlots(posts, to, capacity) < group.count) return 'space';
+  return null;
+}
+
 function applyMove(posts, from, to, capacity) {
   const group = takeTopGroup(posts, from);
   if (!group) return posts;
@@ -729,7 +743,7 @@ function isSolved(posts, capacity) {
   return true;
 }
 
-return { takeTopGroup, freeSlots, canMove, applyMove, listMoves, isPostComplete, isSolved };
+return { takeTopGroup, freeSlots, canMove, moveBlocker, applyMove, listMoves, isPostComplete, isSolved };
 })();
 const __src_game_solver_js = (() => {
 // Поиск решения. В рантайме вызывается ТОЛЬКО по кнопке подсказки:
@@ -1258,6 +1272,11 @@ const RECESS_EDGE_LIGHT = 0.22;
 const CAP_OVERHANG = 0.08;
 const CAP_HEIGHT = 0.18;
 const CAP_DARK = -0.18;
+// Контур свободного слота: только ромб верхней грани. Вертикальных рёбер
+// быть не должно — из-за них поле превращалось в лес стеклянных колонн.
+const SLOT_RGB = '92, 70, 44';
+const SLOT_ALPHA = 0.18;
+const SLOT_WIDTH = 1;
 // Символ на боковой грани: доля ширины грани.
 const SYMBOL_SCALE = 0.44;
 const SYMBOL_DARK = -0.52;
@@ -1334,8 +1353,41 @@ function cubeSideHeight(size) {
 }
 
 // (x, y) — центр верхней грани. size — половина ширины ромба.
-function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
-  drawBlock(ctx, x, y, size, PALETTE[colorIndex % PALETTE.length], squash, colorIndex, false);
+// outline — обводка поверх обычной: ей вспыхивает кубик при отказе.
+function drawCube(ctx, x, y, size, colorIndex, squash = 1, outline = null) {
+  const base = PALETTE[colorIndex % PALETTE.length];
+  if (!outline) {
+    drawBlock(ctx, x, y, size, base, squash, colorIndex, null);
+    return;
+  }
+  // Объект переиспользуется: в цикле отрисовки мусор не создаём.
+  FLASH_STYLE.outline = outline;
+  drawBlock(ctx, x, y, size, base, squash, colorIndex, FLASH_STYLE);
+}
+
+const FLASH_STYLE = { outline: null, window: 0 };
+
+// Ромб свободного слота. Стопка таких ромбов над кубиками показывает,
+// сколько ещё влезет: на полном столбике их нет вовсе.
+const slotStrokeCache = new Map();
+
+function drawSlotOutline(ctx, x, y, size, alpha) {
+  const key = Math.round(alpha * 100);
+  let stroke = slotStrokeCache.get(key);
+  if (!stroke) {
+    stroke = `rgba(${SLOT_RGB}, ${key / 100})`;
+    slotStrokeCache.set(key, stroke);
+  }
+  const h = size / 2;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = SLOT_WIDTH;
+  ctx.beginPath();
+  ctx.moveTo(x, y - h);
+  ctx.lineTo(x + size, y);
+  ctx.lineTo(x, y + h);
+  ctx.lineTo(x - size, y);
+  ctx.closePath();
+  ctx.stroke();
 }
 
 // Один рендер деталей на всю игру: и поле, и город. base — цвет детали,
@@ -1581,7 +1633,7 @@ function drawRecess(ctx, x, baseY, size) {
   ctx.stroke();
 }
 
-return { PALETTE, SKY_TOP, TABLE, FIELD, WOOD, WOOD_DARK, INK, OUTLINE_DARK, OUTLINE_WIDTH, BASE_RADIUS_RATIO, shade, mix, cubeSideHeight, drawCube, drawBlock, drawStuds, drawStud, drawCap, capHeight, WINDOW_SQUARE, WINDOW_TALL, drawPostBase };
+return { PALETTE, SKY_TOP, TABLE, FIELD, WOOD, WOOD_DARK, INK, OUTLINE_DARK, OUTLINE_WIDTH, BASE_RADIUS_RATIO, SLOT_ALPHA, shade, mix, cubeSideHeight, drawCube, drawSlotOutline, drawBlock, drawStuds, drawStud, drawCap, capHeight, WINDOW_SQUARE, WINDOW_TALL, drawPostBase };
 })();
 const __src_render_scale_js = (() => {
 // Единая сетка масштабов города. CITY_UNIT — высота одного городского
@@ -1934,6 +1986,13 @@ const MONUMENT_STEPS = [
 ];
 // Радиус шире здания: вокруг памятника остаётся просвет, иначе его
 // закрывают соседние башни.
+// Навершие: у каждого материала своё, иначе три памятника отличались бы
+// только тоном обводки. Всё вместе — не выше 0.6 кубика.
+const FINIAL_POLE = 0.5;
+const FINIAL_FLAG = 0.36;
+const FINIAL_BALL = 0.28;
+const FINIAL_SPIRE = 0.42;
+const FINIAL_ANTENNA = 0.18;
 const MONUMENT_RADIUS = CUBE_WIDTH_UNITS;
 const MONUMENT_HEIGHT = MONUMENT_PEDESTAL.height + MONUMENT_STEPS.reduce((sum, step) => sum + step.height, 0);
 const styleCache = new Map();
@@ -2752,11 +2811,73 @@ function paintMonument(ctx, monument, x, groundY, unit, material, rise) {
   ctx.clip();
   let level = groundY + hidden;
   level = stackBlock(ctx, x, level, half * MONUMENT_PEDESTAL.width, MONUMENT_PEDESTAL.height * unit, monument.color, false, style);
+  let top = half;
   for (let i = 0; i < MONUMENT_STEPS.length; i += 1) {
     const step = MONUMENT_STEPS[i];
-    level = stackBlock(ctx, x, level, half * step.width, step.height * unit, monument.color, i === MONUMENT_STEPS.length - 1, style);
+    top = half * step.width;
+    level = stackBlock(ctx, x, level, top, step.height * unit, monument.color, i === MONUMENT_STEPS.length - 1, style);
   }
+  monumentFinial(ctx, material, x, level, top, unit, monument.color, style);
   ctx.restore();
+}
+
+// Навершие в цвет медали: дерево — флажок на древке, камень — шар,
+// стекло — шпиль с антенной.
+function monumentFinial(ctx, material, x, topY, half, unit, color, style) {
+  const outline = style && style.outline ? style.outline : shade(color, -OUTLINE_DARK);
+  ctx.strokeStyle = outline;
+  ctx.lineWidth = OUTLINE_WIDTH;
+  ctx.lineJoin = 'round';
+  if (material === 'stone') {
+    const radius = FINIAL_BALL * unit;
+    ctx.fillStyle = shade(color, 0.14);
+    ctx.beginPath();
+    ctx.arc(x, topY - radius, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Блик снизу слева: без него шар читается плоским кругом.
+    ctx.fillStyle = shade(color, -0.2);
+    ctx.beginPath();
+    ctx.arc(x, topY - radius, radius, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.fill();
+    ctx.stroke();
+    return;
+  }
+  if (material === 'glass') {
+    const apex = topY - FINIAL_SPIRE * unit;
+    const w = half * 0.55;
+    triangle(ctx, x - w, topY, x, topY + w * 0.5, x, apex, shade(color, -0.14));
+    triangle(ctx, x + w, topY, x, topY + w * 0.5, x, apex, shade(color, -0.34));
+    ctx.strokeStyle = shade(color, -0.4);
+    ctx.lineWidth = Math.max(1, unit * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(x, apex);
+    ctx.lineTo(x, apex - FINIAL_ANTENNA * unit);
+    ctx.stroke();
+    ctx.fillStyle = shade(color, 0.2);
+    ctx.beginPath();
+    ctx.arc(x, apex - FINIAL_ANTENNA * unit, Math.max(1, unit * 0.07), 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  const poleTop = topY - FINIAL_POLE * unit;
+  ctx.lineWidth = Math.max(1, unit * 0.06);
+  ctx.strokeStyle = shade(color, -0.4);
+  ctx.beginPath();
+  ctx.moveTo(x, topY);
+  ctx.lineTo(x, poleTop);
+  ctx.stroke();
+  const flag = FINIAL_FLAG * unit;
+  ctx.strokeStyle = outline;
+  ctx.lineWidth = OUTLINE_WIDTH;
+  ctx.fillStyle = shade(color, 0.12);
+  ctx.beginPath();
+  ctx.moveTo(x, poleTop);
+  ctx.lineTo(x + flag, poleTop + flag * 0.34);
+  ctx.lineTo(x, poleTop + flag * 0.68);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
 }
 
 function paintReward(ctx, pending, x, groundY, unit, squash, material) {
@@ -3259,7 +3380,7 @@ const __src_render_scene_js = (() => {
 // Отрисовка кадра целиком. Модуль только читает view — состояние
 // игры он не меняет.
 
-const { drawCube, drawPostBase, drawStuds, drawCap, SKY_TOP, TABLE, FIELD, INK, mix, shade } = __src_render_iso_js;
+const { drawCube, drawPostBase, drawStuds, drawCap, drawSlotOutline, PALETTE, SKY_TOP, TABLE, FIELD, INK, OUTLINE_DARK, SLOT_ALPHA, mix, shade } = __src_render_iso_js;
 const { drawShadow } = __src_render_shadow_js;
 const { getCityCanvas, drawReward, drawRewardAt, drawRipple } = __src_render_city_js;
 const { slotPosition } = __src_render_layout_js;
@@ -3282,6 +3403,13 @@ const BURST_ALPHA = 0.5;
 const BURST_WIDTH = 2.5;
 // Крышка падает с высоты 1.2 кубика.
 const CAP_DROP = 1.2;
+// Отказ по нехватке места: ромбы свободных слотов на миг наливаются.
+const SLOT_FLASH_ALPHA = 0.45;
+// Отказ по цвету: обводка спорящих кубиков светлеет на 40%.
+const DENY_FLASH_LIGHT = 0.4;
+// Ступень квантования вспышки: кеш оттенков не должен пухнуть от
+// каждого промежуточного значения твина.
+const FLASH_STEPS = 20;
 
 function drawScene(ctx, view) {
   const { layout, fx } = view;
@@ -3355,12 +3483,16 @@ function drawPosts(ctx, view) {
     if (view.hint && (view.hint.from === i || view.hint.to === i)) {
       drawHintMark(ctx, layout, post, view.hintPulse, view.hint.from === i);
     }
+    // Вспышка обводки при отказе по цвету — только верхнему кубику цели.
+    const flash = denyFlash(view, i, 'color');
     for (let slot = 0; slot < visible; slot += 1) {
       const pos = slotPosition(layout, i, slot);
       const wave = waveOffset(view, i, slot, step);
       const squash = landingSquash(view, i, slot);
-      drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash);
+      const lit = flash > 0 && slot === visible - 1 ? flashOutline(posts[i][slot], flash) : null;
+      drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash, lit);
     }
+    drawFreeSlots(ctx, view, i, post, size);
     if (visible > 0) {
       const top = slotPosition(layout, i, visible - 1);
       const topY = top.y - waveOffset(view, i, visible - 1, step);
@@ -3372,6 +3504,32 @@ function drawPosts(ctx, view) {
     }
     ctx.translate(-dx, 0);
   }
+}
+
+// Свободные слоты: ромбы на тех высотах, где стояли бы кубики. Счёт идёт
+// по состоянию столбика, а не по видимым кубикам, — поэтому поднятая
+// в руку группа ромбов не добавляет.
+function drawFreeSlots(ctx, view, index, post, size) {
+  const height = view.posts[index].length;
+  if (height >= view.capacity) return;
+  const alpha = SLOT_ALPHA + (SLOT_FLASH_ALPHA - SLOT_ALPHA) * denyFlash(view, index, 'space');
+  for (let slot = height; slot < view.capacity; slot += 1) {
+    const pos = slotPosition(view.layout, index, slot);
+    drawSlotOutline(ctx, pos.x, pos.y, size, alpha);
+  }
+}
+
+// Сила вспышки отказа нужного вида для этого столбика: 0 — вспышки нет.
+function denyFlash(view, index, kind) {
+  const deny = view.deny;
+  if (!deny || deny.kind !== kind || deny.index !== index) return 0;
+  return deny.flash;
+}
+
+function flashOutline(colorIndex, flash) {
+  const base = PALETTE[colorIndex % PALETTE.length];
+  const step = Math.round(flash * FLASH_STEPS) / FLASH_STEPS;
+  return shade(shade(base, -OUTLINE_DARK), DENY_FLASH_LIGHT * step);
 }
 
 // null — крышки нет; иначе состояние падения. Пока крышка не долетела,
@@ -3481,10 +3639,14 @@ function drawHand(ctx, view) {
   // так видно, что группа в воздухе.
   drawShadow(ctx, post.x, post.baseY, baseSlot * layout.step * post.scale, size * 2, HAND_SHADOW_FADE);
   let topY = 0;
+  // При отказе по цвету группа в руке вспыхивает вместе с кубиком цели:
+  // видно, какие именно два цвета сравниваются.
+  const flash = view.deny && view.deny.kind === 'color' ? view.deny.flash : 0;
+  const lit = flash > 0 ? flashOutline(hand.color, flash) : null;
   for (let i = 0; i < hand.count; i += 1) {
     const pos = slotPosition(layout, hand.from, baseSlot + i);
     topY = pos.y - lift;
-    drawCube(ctx, post.x + hand.bob, topY, size, hand.color, 1);
+    drawCube(ctx, post.x + hand.bob, topY, size, hand.color, 1, lit);
   }
   drawStuds(ctx, post.x + hand.bob, topY, size, hand.color);
 }
@@ -3512,6 +3674,7 @@ const TAKE_FREQ = 440;
 const TAKE_MS = 40;
 const DENY_FREQ = 140;
 const DENY_MS = 90;
+const DENY_CLICK_GAP = 0.07;
 const CHORD_MS = 400;
 const PENTATONIC = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25];
 const COMBO_RESET_MS = 2000;
@@ -3573,9 +3736,9 @@ function tone(freq, ms, type = 'triangle', gain = 0.28, delay = 0) {
   osc.stop(now + ms / 1000 + 0.02);
 }
 
-function click(gain = 0.35) {
+function click(gain = 0.35, delay = 0) {
   if (!context || !enabled || !noiseBuffer) return;
-  const now = context.currentTime;
+  const now = context.currentTime + delay;
   const source = context.createBufferSource();
   const filter = context.createBiquadFilter();
   const env = context.createGain();
@@ -3630,6 +3793,13 @@ function playDeny() {
   tone(DENY_FREQ, DENY_MS, 'sine', 0.3);
 }
 
+// Нехватка места звучит иначе, чем несовпадение цвета: два сухих щелчка
+// без тона. На слух перепутать их нельзя.
+function playDenySpace() {
+  click(0.3);
+  click(0.3, DENY_CLICK_GAP);
+}
+
 function playWin() {
   for (let i = 0; i < PENTATONIC.length; i += 1) {
     tone(PENTATONIC[i] * 2, 260, 'triangle', 0.2, i * 0.07);
@@ -3640,7 +3810,7 @@ function resetCombo() {
   comboIndex = 0;
 }
 
-return { initAudio, resumeAudio, suspendAudio, setMuted, playTake, playPlace, playComplete, playCap, playLand, playDeny, playWin, resetCombo };
+return { initAudio, resumeAudio, suspendAudio, setMuted, playTake, playPlace, playComplete, playCap, playLand, playDeny, playDenySpace, playWin, resetCombo };
 })();
 const __src_ui_hud_js = (() => {
 // DOM-оверлей поверх канваса: счётчики и кнопки. Разметка лежит
@@ -4266,7 +4436,7 @@ const { LEVELS_NORMAL } = __levels_levels_normal_js;
 const { LEVELS_HARD } = __levels_levels_hard_js;
 const { createState } = __src_game_state_js;
 const { MODE_IDS, DEFAULT_MODE, MEDAL_COLORS, modeConfig, levelSeed, medalFor } = __src_game_modes_js;
-const { takeTopGroup, canMove, applyMove, isSolved, isPostComplete } = __src_game_rules_js;
+const { takeTopGroup, canMove, moveBlocker, applyMove, isSolved, isPostComplete } = __src_game_rules_js;
 const { generateLevel } = __src_game_generator_js;
 const { findHint, findOptimal } = __src_game_solver_js;
 const { createHistory, pushHistory, popHistory, canUndo, clearHistory } = __src_game_history_js;
@@ -4293,6 +4463,11 @@ const SQUASH_FROM = 0.88;
 const DENY_MS = 220;
 const DENY_CYCLES = 3;
 const DENY_AMPLITUDE = 5;
+// Отказ сначала показывает причину и только потом дрожит: вспышка
+// на дрожащем столбике не читается.
+const DENY_SHAKE_DELAY_MS = 60;
+const DENY_COLOR_FLASH_MS = 140;
+const DENY_SPACE_FLASH_MS = 200;
 const TRANSITION_MS = 550;
 const HINT_SHOW_MS = 3200;
 const WINDOW_STEP_MS = 60;
@@ -4365,6 +4540,7 @@ const app = {
   flight: null,
   hidden: null,
   shake: null,
+  deny: null,
   hint: null,
   // Празднование сборки столбика идёт параллельно ходам, поэтому
   // каждый эффект живёт в списке: их может быть несколько сразу.
@@ -4502,6 +4678,7 @@ function startLevel(id) {
   app.hidden = null;
   app.landing = null;
   app.shake = null;
+  app.deny = null;
   app.hint = null;
   clearEffects();
   app.pending.length = 0;
@@ -4628,13 +4805,37 @@ function returnGroup() {
   });
 }
 
-// Дрожь отказа — тоже декорация: следующий тап она не съедает.
+// Отказ объясняет причину без слов: несовпадение цвета — вспышка обводки
+// у спорящих кубиков, нехватка места — вспышка свободных ромбов цели.
+// Дрожь — тоже декорация: следующий тап она не съедает.
 function denyMove(index) {
-  sfx.playDeny();
+  const kind = moveBlocker(app.state.posts, app.hand.from, index, app.state.capacity);
+  if (kind === 'space') sfx.playDenySpace();
+  else sfx.playDeny();
+  if (kind) {
+    const deny = { index, kind, flash: 0 };
+    app.deny = deny;
+    addTween(app.tweens, {
+      duration: kind === 'color' ? DENY_COLOR_FLASH_MS : DENY_SPACE_FLASH_MS,
+      onUpdate: (t) => {
+        // Вспышка вспыхивает и гаснет внутри своей длительности.
+        deny.flash = Math.sin(t * Math.PI);
+      },
+      onDone: () => {
+        if (app.deny === deny) app.deny = null;
+      }
+    });
+  }
+  // При prefers-reduced-motion остаётся только вспышка: она несёт смысл,
+  // дрожь — нет.
+  if (app.fx.reducedMotion) return;
   const shake = { index, offset: 0 };
-  app.shake = shake;
   addTween(app.tweens, {
+    delay: DENY_SHAKE_DELAY_MS,
     duration: DENY_MS,
+    onStart: () => {
+      app.shake = shake;
+    },
     onUpdate: (t) => {
       const decay = 1 - t;
       shake.offset = Math.sin(t * Math.PI * 2 * DENY_CYCLES) * DENY_AMPLITUDE * decay;
@@ -5251,6 +5452,7 @@ function render() {
     layout: app.layout,
     dpr: app.dpr,
     posts: app.state ? app.state.posts : [],
+    capacity: app.state ? app.state.capacity : 0,
     completed,
     caps: app.caps,
     bursts: app.bursts,
@@ -5264,6 +5466,7 @@ function render() {
     landings: app.landings,
     waves: app.waves,
     shake: app.shake,
+    deny: app.deny,
     hint: app.hint,
     hintPulse: app.hintPulse,
     fx: app.fx,

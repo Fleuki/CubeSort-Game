@@ -6,7 +6,7 @@ import { LEVELS_NORMAL } from '../levels/levels-normal.js';
 import { LEVELS_HARD } from '../levels/levels-hard.js';
 import { createState } from './game/state.js';
 import { MODE_IDS, DEFAULT_MODE, MEDAL_COLORS, modeConfig, levelSeed, medalFor } from './game/modes.js';
-import { takeTopGroup, canMove, applyMove, isSolved, isPostComplete } from './game/rules.js';
+import { takeTopGroup, canMove, moveBlocker, applyMove, isSolved, isPostComplete } from './game/rules.js';
 import { generateLevel } from './game/generator.js';
 import { findHint, findOptimal } from './game/solver.js';
 import { createHistory, pushHistory, popHistory, canUndo, clearHistory } from './game/history.js';
@@ -33,6 +33,11 @@ const SQUASH_FROM = 0.88;
 const DENY_MS = 220;
 const DENY_CYCLES = 3;
 const DENY_AMPLITUDE = 5;
+// Отказ сначала показывает причину и только потом дрожит: вспышка
+// на дрожащем столбике не читается.
+const DENY_SHAKE_DELAY_MS = 60;
+const DENY_COLOR_FLASH_MS = 140;
+const DENY_SPACE_FLASH_MS = 200;
 const TRANSITION_MS = 550;
 const HINT_SHOW_MS = 3200;
 const WINDOW_STEP_MS = 60;
@@ -105,6 +110,7 @@ const app = {
   flight: null,
   hidden: null,
   shake: null,
+  deny: null,
   hint: null,
   // Празднование сборки столбика идёт параллельно ходам, поэтому
   // каждый эффект живёт в списке: их может быть несколько сразу.
@@ -242,6 +248,7 @@ function startLevel(id) {
   app.hidden = null;
   app.landing = null;
   app.shake = null;
+  app.deny = null;
   app.hint = null;
   clearEffects();
   app.pending.length = 0;
@@ -368,13 +375,37 @@ function returnGroup() {
   });
 }
 
-// Дрожь отказа — тоже декорация: следующий тап она не съедает.
+// Отказ объясняет причину без слов: несовпадение цвета — вспышка обводки
+// у спорящих кубиков, нехватка места — вспышка свободных ромбов цели.
+// Дрожь — тоже декорация: следующий тап она не съедает.
 function denyMove(index) {
-  sfx.playDeny();
+  const kind = moveBlocker(app.state.posts, app.hand.from, index, app.state.capacity);
+  if (kind === 'space') sfx.playDenySpace();
+  else sfx.playDeny();
+  if (kind) {
+    const deny = { index, kind, flash: 0 };
+    app.deny = deny;
+    addTween(app.tweens, {
+      duration: kind === 'color' ? DENY_COLOR_FLASH_MS : DENY_SPACE_FLASH_MS,
+      onUpdate: (t) => {
+        // Вспышка вспыхивает и гаснет внутри своей длительности.
+        deny.flash = Math.sin(t * Math.PI);
+      },
+      onDone: () => {
+        if (app.deny === deny) app.deny = null;
+      }
+    });
+  }
+  // При prefers-reduced-motion остаётся только вспышка: она несёт смысл,
+  // дрожь — нет.
+  if (app.fx.reducedMotion) return;
   const shake = { index, offset: 0 };
-  app.shake = shake;
   addTween(app.tweens, {
+    delay: DENY_SHAKE_DELAY_MS,
     duration: DENY_MS,
+    onStart: () => {
+      app.shake = shake;
+    },
     onUpdate: (t) => {
       const decay = 1 - t;
       shake.offset = Math.sin(t * Math.PI * 2 * DENY_CYCLES) * DENY_AMPLITUDE * decay;
@@ -991,6 +1022,7 @@ function render() {
     layout: app.layout,
     dpr: app.dpr,
     posts: app.state ? app.state.posts : [],
+    capacity: app.state ? app.state.capacity : 0,
     completed,
     caps: app.caps,
     bursts: app.bursts,
@@ -1004,6 +1036,7 @@ function render() {
     landings: app.landings,
     waves: app.waves,
     shake: app.shake,
+    deny: app.deny,
     hint: app.hint,
     hintPulse: app.hintPulse,
     fx: app.fx,

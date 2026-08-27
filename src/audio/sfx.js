@@ -5,6 +5,7 @@ const TAKE_FREQ = 440;
 const TAKE_MS = 40;
 const DENY_FREQ = 140;
 const DENY_MS = 90;
+const DENY_CLICK_GAP = 0.07;
 const CHORD_MS = 400;
 const PENTATONIC = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25];
 const COMBO_RESET_MS = 2000;
@@ -66,9 +67,9 @@ function tone(freq, ms, type = 'triangle', gain = 0.28, delay = 0) {
   osc.stop(now + ms / 1000 + 0.02);
 }
 
-function click(gain = 0.35) {
+function click(gain = 0.35, delay = 0) {
   if (!context || !enabled || !noiseBuffer) return;
-  const now = context.currentTime;
+  const now = context.currentTime + delay;
   const source = context.createBufferSource();
   const filter = context.createBiquadFilter();
   const env = context.createGain();
@@ -121,6 +122,13 @@ export function playLand() {
 
 export function playDeny() {
   tone(DENY_FREQ, DENY_MS, 'sine', 0.3);
+}
+
+// Нехватка места звучит иначе, чем несовпадение цвета: два сухих щелчка
+// без тона. На слух перепутать их нельзя.
+export function playDenySpace() {
+  click(0.3);
+  click(0.3, DENY_CLICK_GAP);
 }
 
 export function playWin() {

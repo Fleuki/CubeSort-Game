@@ -38,6 +38,11 @@ const RECESS_EDGE_LIGHT = 0.22;
 const CAP_OVERHANG = 0.08;
 const CAP_HEIGHT = 0.18;
 const CAP_DARK = -0.18;
+// Контур свободного слота: только ромб верхней грани. Вертикальных рёбер
+// быть не должно — из-за них поле превращалось в лес стеклянных колонн.
+const SLOT_RGB = '92, 70, 44';
+export const SLOT_ALPHA = 0.18;
+const SLOT_WIDTH = 1;
 // Символ на боковой грани: доля ширины грани.
 const SYMBOL_SCALE = 0.44;
 const SYMBOL_DARK = -0.52;
@@ -114,8 +119,41 @@ export function cubeSideHeight(size) {
 }
 
 // (x, y) — центр верхней грани. size — половина ширины ромба.
-export function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
-  drawBlock(ctx, x, y, size, PALETTE[colorIndex % PALETTE.length], squash, colorIndex, false);
+// outline — обводка поверх обычной: ей вспыхивает кубик при отказе.
+export function drawCube(ctx, x, y, size, colorIndex, squash = 1, outline = null) {
+  const base = PALETTE[colorIndex % PALETTE.length];
+  if (!outline) {
+    drawBlock(ctx, x, y, size, base, squash, colorIndex, null);
+    return;
+  }
+  // Объект переиспользуется: в цикле отрисовки мусор не создаём.
+  FLASH_STYLE.outline = outline;
+  drawBlock(ctx, x, y, size, base, squash, colorIndex, FLASH_STYLE);
+}
+
+const FLASH_STYLE = { outline: null, window: 0 };
+
+// Ромб свободного слота. Стопка таких ромбов над кубиками показывает,
+// сколько ещё влезет: на полном столбике их нет вовсе.
+const slotStrokeCache = new Map();
+
+export function drawSlotOutline(ctx, x, y, size, alpha) {
+  const key = Math.round(alpha * 100);
+  let stroke = slotStrokeCache.get(key);
+  if (!stroke) {
+    stroke = `rgba(${SLOT_RGB}, ${key / 100})`;
+    slotStrokeCache.set(key, stroke);
+  }
+  const h = size / 2;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = SLOT_WIDTH;
+  ctx.beginPath();
+  ctx.moveTo(x, y - h);
+  ctx.lineTo(x + size, y);
+  ctx.lineTo(x, y + h);
+  ctx.lineTo(x - size, y);
+  ctx.closePath();
+  ctx.stroke();
 }
 
 // Один рендер деталей на всю игру: и поле, и город. base — цвет детали,
