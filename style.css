@@ -245,7 +245,7 @@ html, body {
 }
 
 .menu-note {
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   font-size: 14px;
   line-height: 1.45;
   opacity: 0.72;
@@ -267,6 +267,62 @@ html, body {
 
 .primary:active { transform: translateY(3px); box-shadow: none; }
 
+/* Карточки режимов: три спокойных плитки, ни одна не спорит с соседней. */
+.modes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mode-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'city city' 'title stars' 'progress stars';
+  align-items: center;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 10px 12px 12px;
+  border: none;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 3px 0 rgba(154, 123, 82, 0.28);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mode-card:active { transform: translateY(2px); box-shadow: none; }
+
+.mode-city {
+  grid-area: city;
+  width: 100%;
+  height: 72px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: rgba(223, 208, 180, 0.5);
+}
+
+.mode-title {
+  grid-area: title;
+  font-family: 'Unbounded', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.mode-progress {
+  grid-area: progress;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.mode-stars {
+  grid-area: stars;
+  font-size: 12px;
+  opacity: 0.7;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .menu-row {
   display: flex;
   align-items: center;
@@ -275,6 +331,8 @@ html, body {
   font-size: 13px;
   opacity: 0.75;
 }
+
+.menu-row-end { justify-content: flex-end; }
 
 .link {
   border: none;
@@ -334,5 +392,7 @@ html, body {
 
 @media (max-height: 620px) {
   .menu-card { padding: 18px 16px; }
+  .mode-city { height: 60px; }
+  .mode-title { font-size: 15px; }
   .tool { font-size: 10px; padding: 6px 4px 5px; }
 }

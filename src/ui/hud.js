@@ -1,10 +1,12 @@
 // DOM-оверлей поверх канваса: счётчики и кнопки. Разметка лежит
 // в index.html, здесь только связывание и обновление.
 
-const FREE_UNDO = 3;
-const FREE_HINTS = 2;
+// Сколько бесплатных попыток в уровне — задаёт режим, здесь только
+// значения по умолчанию до его выбора.
+const DEFAULT_LIMITS = { undo: 3, hint: 2, post: 1 };
 
 export function createHud(handlers) {
+  const limits = { ...DEFAULT_LIMITS };
   const root = document.getElementById('hud');
   const levelNumber = document.getElementById('level-number');
   const levelGoal = document.getElementById('level-goal');
@@ -27,6 +29,12 @@ export function createHud(handlers) {
   });
 
   return {
+    // Лимиты приходят из режима: в лёгком их больше, в сложном меньше.
+    setLimits(next) {
+      limits.undo = next.undo;
+      limits.hint = next.hint;
+      limits.post = next.post;
+    },
     show() {
       root.classList.remove('hidden');
     },
@@ -58,11 +66,11 @@ export function createHud(handlers) {
     },
     // Когда бесплатные попытки кончились — на бейдже значок рекламы.
     update(status) {
-      setBadge(undoBadge, Math.max(0, FREE_UNDO - status.undoUsed));
+      setBadge(undoBadge, Math.max(0, limits.undo - status.undoUsed));
       // Серая кнопка с цифрой «3» противоречит сама себе: отменять нечего.
       undoBadge.classList.toggle('hidden', !status.canUndo);
-      setBadge(hintBadge, Math.max(0, FREE_HINTS - status.hintsUsed));
-      postBadge.textContent = status.extraPostUsed ? '▶' : '1';
+      setBadge(hintBadge, Math.max(0, limits.hint - status.hintsUsed));
+      postBadge.textContent = status.extraPostUsed ? '▶' : String(limits.post);
       postBadge.classList.toggle('reward', status.extraPostUsed);
       // Отменять нечего — кнопка выключена. А вот «дальше за рекламу» —
       // это рабочее состояние, и выключенной кнопка выглядеть не должна.
@@ -77,4 +85,3 @@ function setBadge(node, left) {
   node.classList.toggle('reward', left === 0);
 }
 
-export { FREE_UNDO, FREE_HINTS };

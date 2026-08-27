@@ -56,6 +56,9 @@ const STUD_STROKE_DARK = -0.45;
 // Окно города: тёплый квадрат тем же оттиском, что и символы.
 const WINDOW_LIT = '#FFD98A';
 const WINDOW_SCALE = 0.26;
+// Узкое вертикальное окно стеклянного города — в долях квадратного.
+const WINDOW_TALL_WIDTH = 0.45;
+const WINDOW_TALL_HEIGHT = 1.35;
 const WINDOW_DARK = -0.45;
 
 // Символы различают цвета для дальтоников. Живут на боковых гранях:
@@ -117,8 +120,9 @@ export function drawCube(ctx, x, y, size, colorIndex, squash = 1) {
 
 // Один рендер деталей на всю игру: и поле, и город. base — цвет детали,
 // squash сжимает только боковые грани, symbol — индекс символа на них
-// (-1 — без символа), lit — вместо символа тёплое окно.
-export function drawBlock(ctx, x, y, size, base, squash = 1, symbol = -1, lit = false) {
+// (-1 — без символа). style — отделка города: окно на боковых гранях
+// и своя обводка. У игрового поля стиля нет, объект там не создаётся.
+export function drawBlock(ctx, x, y, size, base, squash = 1, symbol = -1, style = null) {
   const w = size;
   const h = size / 2;
   const side = cubeSideHeight(size) * squash;
@@ -131,7 +135,7 @@ export function drawBlock(ctx, x, y, size, base, squash = 1, symbol = -1, lit = 
   ctx.closePath();
   ctx.fillStyle = shade(base, TOP_LIGHT);
   ctx.fill();
-  ctx.strokeStyle = shade(base, -OUTLINE_DARK);
+  ctx.strokeStyle = style && style.outline ? style.outline : shade(base, -OUTLINE_DARK);
   ctx.lineWidth = OUTLINE_WIDTH;
   ctx.stroke();
 
@@ -161,9 +165,9 @@ export function drawBlock(ctx, x, y, size, base, squash = 1, symbol = -1, lit = 
   if (symbol >= 0) {
     drawSymbol(ctx, x - w / 2, faceY, size, 0.5, symbol, leftFace);
     drawSymbol(ctx, x + w / 2, faceY, size, -0.5, symbol, rightFace);
-  } else if (lit) {
-    drawWindow(ctx, x - w / 2, faceY, size, 0.5, leftFace);
-    drawWindow(ctx, x + w / 2, faceY, size, -0.5, rightFace);
+  } else if (style && style.window) {
+    drawWindow(ctx, x - w / 2, faceY, size, 0.5, leftFace, style.window);
+    drawWindow(ctx, x + w / 2, faceY, size, -0.5, rightFace, style.window);
   }
 }
 
@@ -175,10 +179,10 @@ export function drawStuds(ctx, x, y, size, colorIndex) {
   drawStud(ctx, x, y, size, PALETTE[colorIndex % PALETTE.length]);
 }
 
-export function drawStud(ctx, x, y, size, base) {
+export function drawStud(ctx, x, y, size, base, outline) {
   const radius = size * 2 * STUD_RADIUS;
   if (radius < MIN_STUD_RADIUS) return;
-  ctx.strokeStyle = shade(base, STUD_STROKE_DARK);
+  ctx.strokeStyle = outline || shade(base, STUD_STROKE_DARK);
   ctx.lineWidth = OUTLINE_WIDTH;
   stud(ctx, x, y, radius, cubeSideHeight(size) * STUD_HEIGHT, base);
 }
@@ -234,19 +238,25 @@ function drawSymbol(ctx, cx, cy, size, skew, colorIndex, faceColor) {
 }
 
 // Окно в городе — тот же оттиск, что и символ: тёплая заливка,
-// тёмный контур сверху и светлая линия снизу.
-function drawWindow(ctx, cx, cy, size, skew, faceColor) {
+// тёмный контур сверху и светлая линия снизу. Форма зависит от
+// материала: WINDOW_SQUARE у дерева и камня, WINDOW_TALL у стекла.
+export const WINDOW_SQUARE = 1;
+export const WINDOW_TALL = 2;
+
+function drawWindow(ctx, cx, cy, size, skew, faceColor, kind) {
   const r = size * WINDOW_SCALE * 0.5;
+  const rx = kind === WINDOW_TALL ? r * WINDOW_TALL_WIDTH : r;
+  const ry = kind === WINDOW_TALL ? r * WINDOW_TALL_HEIGHT : r;
   ctx.save();
   ctx.transform(1, skew, 0, 1, cx, cy);
   ctx.fillStyle = WINDOW_LIT;
-  ctx.fillRect(-r, -r, r * 2, r * 2);
+  ctx.fillRect(-rx, -ry, rx * 2, ry * 2);
   ctx.lineWidth = Math.max(0.6, size * 0.05);
   ctx.strokeStyle = shade(faceColor, WINDOW_DARK);
   ctx.beginPath();
-  ctx.moveTo(-r, r);
-  ctx.lineTo(-r, -r);
-  ctx.lineTo(r, -r);
+  ctx.moveTo(-rx, ry);
+  ctx.lineTo(-rx, -ry);
+  ctx.lineTo(rx, -ry);
   ctx.stroke();
   ctx.restore();
 }

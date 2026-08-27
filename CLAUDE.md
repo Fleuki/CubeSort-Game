@@ -38,11 +38,14 @@
 index.html
 style.css
 assets/fonts/          локальные woff2 (Unbounded, Onest), сабсет кириллицы
-levels/levels.json     60 предгенерированных уровней
-tools/gen-levels.js    офлайн-скрипт генерации, запускается в Node вручную
+levels/levels-easy.json    60 уровней лёгкого режима (плюс .js для file://)
+levels/levels-normal.json  60 уровней среднего режима
+levels/levels-hard.json    60 уровней сложного режима
+tools/gen-levels.js    офлайн-генерация, принимает --mode, запускается вручную
 src/
   main.js              точка входа, игровой цикл, склейка модулей
   game/
+    modes.js           таблицы трёх режимов: кривые, лимиты, материалы, медали
     state.js           создание и клонирование состояния уровня
     rules.js           canMove, applyMove, isSolved, takeTopGroup
     generator.js       обратная генерация уровня
@@ -60,7 +63,7 @@ src/
     sfx.js             синтез звуков через WebAudio
   ui/
     hud.js             DOM-оверлей: кнопки, счётчики
-    screens.js         загрузка, главный, победа, настройки
+    screens.js         загрузка, выбор режима, победа, настройки
   platform/
     sdk.js             фасад: init, showAd, showRewarded, save, load, ready
     yandex.js          реализация под Яндекс SDK

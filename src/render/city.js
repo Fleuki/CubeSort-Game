@@ -2,7 +2,7 @@
 // это чистая награда. Собран из тех же кубиков, что и игровое поле:
 // свой рендер деталей здесь не заводится, всё идёт через iso.js.
 
-import { PALETTE, WOOD, TABLE, OUTLINE_DARK, OUTLINE_WIDTH, cubeSideHeight, drawBlock, drawStud, shade } from './iso.js';
+import { PALETTE, WOOD, TABLE, OUTLINE_DARK, OUTLINE_WIDTH, WINDOW_SQUARE, WINDOW_TALL, cubeSideHeight, drawBlock, drawStud, mix, shade } from './iso.js';
 import { drawShadow, drawShadowAlong } from './shadow.js';
 import {
   CUBE_WIDTH_UNITS, GABLE_RISE, SLAB_HEIGHT, SLAB_OVERHANG, SPIRE_RISE,
@@ -85,8 +85,44 @@ const RIPPLE_ALPHA = 0.3;
 const CROWN_COLORS = ['#5B9750', '#4C8547'];
 const LAMP_HEAD_COLOR = '#E2A238';
 
-export function createCity(buildings = [], props = []) {
+// Отделка режима. Палитра зданий не меняется — цвет по-прежнему берётся
+// от собранного столбика. Меняются крыша, окна, обводка и фонари.
+const COLD = '#2F3A47';
+const PLINTH_COLOR = '#B5AC9B';
+const ANTENNA_COLOR = '#8C97A0';
+const ANTENNA_FROM_CUBES = 3;
+const ANTENNA_HEIGHT = 0.8;
+const MATERIALS = {
+  wood: { roof: 'gable', window: WINDOW_SQUARE, cool: 0, darker: 0, plinth: 0, lamp: WOOD, lampWidth: 1, antenna: false },
+  stone: { roof: 'tiled', window: WINDOW_SQUARE, cool: 0.08, darker: 0, plinth: 0.2, lamp: '#4B4239', lampWidth: 1.2, antenna: false },
+  glass: { roof: 'flat', window: WINDOW_TALL, cool: 0.1, darker: 0.1, plinth: 0, lamp: '#8C97A0', lampWidth: 0.75, antenna: true }
+};
+const TILE_ROWS = 4;
+const styleCache = new Map();
+
+export function materialOf(city) {
+  return MATERIALS[city.material] ? city.material : 'wood';
+}
+
+// Стиль детали: обводка материала и форма окна. Кешируется — в цикле
+// запекания макета объекты создавать нельзя.
+function blockStyle(material, base, lit) {
+  const key = `${material}|${base}|${lit ? 1 : 0}`;
+  const cached = styleCache.get(key);
+  if (cached) return cached;
+  const spec = MATERIALS[material] || MATERIALS.wood;
+  const dark = shade(base, -(OUTLINE_DARK + spec.darker));
+  const style = {
+    outline: spec.cool > 0 ? mix(dark, COLD, spec.cool) : dark,
+    window: lit ? spec.window : 0
+  };
+  styleCache.set(key, style);
+  return style;
+}
+
+export function createCity(buildings = [], props = [], material = 'wood') {
   const city = {
+    material,
     buildings: buildings.slice(),
     props: props.slice(),
     // Награды в полёте занимают место в реестре: две одновременные
@@ -725,7 +761,7 @@ export function getCityCanvas(city, rect) {
     city.ctx.clearRect(0, 0, w, h);
     drawGround(city.ctx, geo, city);
     const items = sceneItems(geo, city);
-    for (let i = 0; i < items.length; i += 1) paintItem(city.ctx, items[i]);
+    for (let i = 0; i < items.length; i += 1) paintItem(city.ctx, items[i], materialOf(city));
     city.dirty = false;
   }
   return city.canvas;
@@ -740,18 +776,18 @@ export function drawReward(ctx, rect, city, pending, squash) {
   ctx.beginPath();
   ctx.rect(rect.x, rect.y, rect.width, rect.height);
   ctx.clip();
-  paintReward(ctx, pending, point.x, point.y, point.unit, squash);
+  paintReward(ctx, pending, point.x, point.y, point.unit, squash, materialOf(city));
   ctx.restore();
 }
 
 // Награда в полёте: та же деталь, только с поворотом и своим масштабом.
-export function drawRewardAt(ctx, pending, x, y, unit, angle) {
+export function drawRewardAt(ctx, city, pending, x, y, unit, angle) {
   if (!pending) return;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
   ctx.translate(-x, -y);
-  paintReward(ctx, pending, x, y, unit, 1);
+  paintReward(ctx, pending, x, y, unit, 1, materialOf(city));
   ctx.restore();
 }
 
@@ -796,14 +832,14 @@ function isPending(city, item) {
   return false;
 }
 
-function paintItem(ctx, entry) {
+function paintItem(ctx, entry, material) {
   const item = entry.item;
   const point = entry.point;
-  if (isProp(item)) paintProp(ctx, propKind(item.slot, item.rank), point.x, point.y, point.unit, item.seed);
-  else paintBuilding(ctx, item, point.x, point.y, point.unit, item.floors);
+  if (isProp(item)) paintProp(ctx, propKind(item.slot, item.rank), point.x, point.y, point.unit, item.seed, material);
+  else paintBuilding(ctx, item, point.x, point.y, point.unit, item.floors, material);
 }
 
-function paintReward(ctx, pending, x, groundY, unit, squash) {
+function paintReward(ctx, pending, x, groundY, unit, squash, material) {
   const scaled = squash !== 1;
   if (scaled) {
     ctx.save();
@@ -813,10 +849,10 @@ function paintReward(ctx, pending, x, groundY, unit, squash) {
   }
   if (pending.prop) {
     const rank = pending.upgrade ? pending.rank : pending.prop.rank;
-    paintProp(ctx, propKind(pending.prop.slot, rank), x, groundY, unit, pending.prop.seed);
+    paintProp(ctx, propKind(pending.prop.slot, rank), x, groundY, unit, pending.prop.seed, material);
   } else {
     const floors = pending.upgrade ? pending.floors : pending.building.floors;
-    paintBuilding(ctx, pending.building, x, groundY, unit, floors);
+    paintBuilding(ctx, pending.building, x, groundY, unit, floors, material);
   }
   if (scaled) ctx.restore();
 }
@@ -889,22 +925,73 @@ function drawFence(ctx, geo) {
 // --- постройки ------------------------------------------------------------
 
 // Здание — стопка городских кубиков плюс крыша. Выступ получает верхний
-// кубик, внутренние — нет, ровно как на игровом поле.
-function paintBuilding(ctx, building, x, groundY, unit, floors) {
+// кубик, внутренние — нет, ровно как на игровом поле. Отделка — от
+// материала режима: цоколь, форма крыши, окна, обводка, антенна.
+function paintBuilding(ctx, building, x, groundY, unit, floors, material) {
+  const spec = MATERIALS[material] || MATERIALS.wood;
   const base = PALETTE[building.color % PALETTE.length];
+  const style = blockStyle(material, base, building.lit);
   const cubes = buildingCubes(building.kind, floors);
   const half = cubeHalf(unit);
   const height = (cubes + roofUnits(building.kind)) * unit;
   if (building.lit) glow(ctx, x, groundY - height * 0.45, half * 2.4, height);
   drawShadow(ctx, x, groundY, height, half * 2 * SHADOW_SPREAD);
-  for (let i = 0; i < cubes; i += 1) {
-    drawBlock(ctx, x, groundY - (i + 1) * unit, half, base, 1, -1, building.lit);
+  let level = groundY;
+  if (spec.plinth > 0) {
+    // Каменный цоколь: здание стоит на плите, а не прямо на песке.
+    const plinth = spec.plinth * unit;
+    const plinthHalf = half * (1 + SLAB_OVERHANG);
+    drawBlock(ctx, x, level - plinth, plinthHalf, PLINTH_COLOR, plinth / cubeSideHeight(plinthHalf), -1, style);
+    level -= plinth;
   }
-  const topY = groundY - cubes * unit;
-  drawStud(ctx, x, topY, half, base);
-  const roof = KIND_ROOF[building.kind];
-  if (roof === 'gable') gableRoof(ctx, x, topY, half, base, GABLE_RISE * unit);
-  else spire(ctx, x, topY, half, base, unit, roof === 'spire');
+  for (let i = 0; i < cubes; i += 1) {
+    drawBlock(ctx, x, level - (i + 1) * unit, half, base, 1, -1, style);
+  }
+  const topY = level - cubes * unit;
+  drawStud(ctx, x, topY, half, base, style.outline);
+  paintRoof(ctx, building.kind, spec, x, topY, half, base, unit, style);
+  if (spec.antenna && cubes > ANTENNA_FROM_CUBES) antenna(ctx, x, topY - SLAB_HEIGHT * unit, unit);
+}
+
+// Крыша: форму задаёт тип здания, отделку — материал. Доминанта
+// остаётся со шпилем в любом материале.
+function paintRoof(ctx, kind, spec, x, topY, half, base, unit, style) {
+  const roof = KIND_ROOF[kind];
+  if (roof === 'spire') {
+    spire(ctx, x, topY, half, base, unit, true, style);
+    return;
+  }
+  if (roof === 'gable' && spec.roof !== 'flat') {
+    gableRoof(ctx, x, topY, half, base, GABLE_RISE * unit, style, spec.roof === 'tiled');
+    return;
+  }
+  spire(ctx, x, topY, half, base, unit, false, style);
+  if (spec.roof === 'flat') metalEdge(ctx, x, topY - SLAB_HEIGHT * unit, half * (1 + SLAB_OVERHANG));
+}
+
+// Тонкая металлическая кромка по краю плоской крыши.
+function metalEdge(ctx, x, y, w) {
+  ctx.strokeStyle = ANTENNA_COLOR;
+  ctx.lineWidth = Math.max(1, w * 0.06);
+  ctx.beginPath();
+  ctx.moveTo(x - w, y);
+  ctx.lineTo(x, y + w / 2);
+  ctx.lineTo(x + w, y);
+  ctx.stroke();
+}
+
+function antenna(ctx, x, y, unit) {
+  const height = ANTENNA_HEIGHT * unit;
+  ctx.strokeStyle = ANTENNA_COLOR;
+  ctx.lineWidth = Math.max(1, unit * 0.06);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x, y - height);
+  ctx.stroke();
+  ctx.fillStyle = ANTENNA_COLOR;
+  ctx.beginPath();
+  ctx.arc(x, y - height, Math.max(1, unit * 0.08), 0, Math.PI * 2);
+  ctx.fill();
 }
 
 // Мягкое тёплое свечение вокруг зданий завершённого района.
@@ -926,17 +1013,17 @@ function glow(ctx, x, y, rx, ry) {
 
 // Плоская крыша — плита из того же кубика, шире стопки и низкая.
 // Со шпилем поверх плиты вырастает пирамидка: так выглядит доминанта.
-function spire(ctx, x, topY, half, base, unit, withSpire) {
+function spire(ctx, x, topY, half, base, unit, withSpire, style) {
   const color = shade(base, ROOF_DARK);
   const slabHalf = half * (1 + SLAB_OVERHANG);
   const slabHeight = SLAB_HEIGHT * unit;
   const slabTop = topY - slabHeight;
-  drawBlock(ctx, x, slabTop, slabHalf, color, slabHeight / cubeSideHeight(slabHalf));
+  drawBlock(ctx, x, slabTop, slabHalf, color, slabHeight / cubeSideHeight(slabHalf), -1, style);
   if (!withSpire) return;
   const apex = slabTop - SPIRE_RISE * unit;
   const w = half * 0.62;
   const h = w / 2;
-  ctx.strokeStyle = shade(base, -OUTLINE_DARK);
+  ctx.strokeStyle = style ? style.outline : shade(base, -OUTLINE_DARK);
   ctx.lineWidth = OUTLINE_WIDTH;
   ctx.lineJoin = 'round';
   triangle(ctx, x - w, slabTop, x, slabTop + h, x, apex, shade(color, -0.14));
@@ -945,7 +1032,7 @@ function spire(ctx, x, topY, half, base, unit, withSpire) {
 
 // Двускатная крыша: конёк идёт по диагонали верхней грани, к зрителю
 // смотрят скат и фронтон. Без неё коробка читается как обычный кубик.
-function gableRoof(ctx, x, y, w, base, rise) {
+function gableRoof(ctx, x, y, w, base, rise, style, tiled) {
   const color = shade(base, ROOF_DARK);
   const h = w / 2;
   const west = { x: x - w, y };
@@ -955,12 +1042,29 @@ function gableRoof(ctx, x, y, w, base, rise) {
   const ridgeBack = { x: x - w / 2, y: y - h / 2 - rise };
   const ridgeFront = { x: x + w / 2, y: y + h / 2 - rise };
 
-  ctx.strokeStyle = shade(base, -OUTLINE_DARK);
+  ctx.strokeStyle = style ? style.outline : shade(base, -OUTLINE_DARK);
   ctx.lineWidth = OUTLINE_WIDTH;
   ctx.lineJoin = 'round';
   quad(ctx, north, east, ridgeFront, ridgeBack, shade(color, -0.14));
   quad(ctx, west, south, ridgeFront, ridgeBack, shade(color, 0.06));
   triangle(ctx, south.x, south.y, east.x, east.y, ridgeFront.x, ridgeFront.y, shade(color, -0.34));
+  if (tiled) {
+    tiles(ctx, north, east, ridgeFront, ridgeBack, shade(color, -0.3));
+    tiles(ctx, west, south, ridgeFront, ridgeBack, shade(color, -0.16));
+  }
+}
+
+// Черепица: поперечные насечки вдоль ската. Форма крыши та же.
+function tiles(ctx, a, b, c, d, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  for (let row = 1; row < TILE_ROWS; row += 1) {
+    const t = row / TILE_ROWS;
+    ctx.beginPath();
+    ctx.moveTo(a.x + (d.x - a.x) * t, a.y + (d.y - a.y) * t);
+    ctx.lineTo(b.x + (c.x - b.x) * t, b.y + (c.y - b.y) * t);
+    ctx.stroke();
+  }
 }
 
 function quad(ctx, a, b, c, d, fill) {
@@ -989,7 +1093,8 @@ function triangle(ctx, ax, ay, bx, by, cx, cy, fill) {
 // --- озеленение -----------------------------------------------------------
 
 // Деревья, фонари и кусты — те же кубики, только уже и ниже.
-function paintProp(ctx, kind, x, groundY, unit, seed) {
+function paintProp(ctx, kind, x, groundY, unit, seed, material) {
+  const spec = MATERIALS[material] || MATERIALS.wood;
   drawShadow(ctx, x, groundY, propHeightUnits(kind) * unit, propWidthUnits(kind) * unit * SHADOW_SPREAD);
   const half = cubeHalf(unit);
   const green = CROWN_COLORS[seed % CROWN_COLORS.length];
@@ -998,7 +1103,8 @@ function paintProp(ctx, kind, x, groundY, unit, seed) {
     return;
   }
   if (kind === 'lamp') {
-    const top = stackBlock(ctx, x, groundY, half * LAMP_POST_WIDTH, LAMP_POST_HEIGHT * unit, WOOD, false);
+    // Столб фонаря — материал режима: дерево, ковка, металл.
+    const top = stackBlock(ctx, x, groundY, half * LAMP_POST_WIDTH * spec.lampWidth, LAMP_POST_HEIGHT * unit, spec.lamp, false);
     stackBlock(ctx, x, top, half * LAMP_HEAD_WIDTH, LAMP_HEAD_HEIGHT * unit, LAMP_HEAD_COLOR, true);
     return;
   }

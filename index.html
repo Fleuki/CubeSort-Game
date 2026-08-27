@@ -45,10 +45,28 @@
 <div id="screen-menu" class="screen hidden">
   <div class="menu-card">
     <div class="logo">Кубики</div>
-    <p class="menu-note">Собери столбик одного цвета — и в городе вырастет дом.</p>
-    <button class="primary" id="btn-play" type="button">Играть</button>
-    <div class="menu-row">
-      <span id="menu-level">Уровень 1</span>
+    <p class="menu-note">В каждом режиме свой город</p>
+    <div class="modes" id="mode-list">
+      <button class="mode-card" id="mode-easy" type="button" data-mode="easy">
+        <canvas class="mode-city" id="mode-city-easy" width="600" height="144"></canvas>
+        <span class="mode-title">Лёгкий</span>
+        <span class="mode-progress" id="mode-progress-easy">Не начат</span>
+        <span class="mode-stars" id="mode-stars-easy"></span>
+      </button>
+      <button class="mode-card" id="mode-normal" type="button" data-mode="normal">
+        <canvas class="mode-city" id="mode-city-normal" width="600" height="144"></canvas>
+        <span class="mode-title">Средний</span>
+        <span class="mode-progress" id="mode-progress-normal">Не начат</span>
+        <span class="mode-stars" id="mode-stars-normal"></span>
+      </button>
+      <button class="mode-card" id="mode-hard" type="button" data-mode="hard">
+        <canvas class="mode-city" id="mode-city-hard" width="600" height="144"></canvas>
+        <span class="mode-title">Сложный</span>
+        <span class="mode-progress" id="mode-progress-hard">Не начат</span>
+        <span class="mode-stars" id="mode-stars-hard"></span>
+      </button>
+    </div>
+    <div class="menu-row menu-row-end">
       <button class="link" id="btn-menu-settings" type="button">Настройки</button>
     </div>
   </div>

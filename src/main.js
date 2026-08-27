@@ -1,8 +1,11 @@
 // Точка входа: игровой цикл, ввод и склейка модулей.
 // Тайминги — из раздела 6 дизайн-дока, менять только вместе с ним.
 
-import { LEVELS } from '../levels/levels.js';
+import { LEVELS_EASY } from '../levels/levels-easy.js';
+import { LEVELS_NORMAL } from '../levels/levels-normal.js';
+import { LEVELS_HARD } from '../levels/levels-hard.js';
 import { createState } from './game/state.js';
+import { MODE_IDS, DEFAULT_MODE, LEVEL_COUNT, modeConfig, levelSeed, medalFor, totalStars } from './game/modes.js';
 import { takeTopGroup, canMove, applyMove, isSolved, isPostComplete, stars } from './game/rules.js';
 import { generateLevel } from './game/generator.js';
 import { findHint, findOptimal } from './game/solver.js';
@@ -10,11 +13,11 @@ import { createHistory, pushHistory, popHistory, canUndo, clearHistory } from '.
 import { computeLayout, hitTest, slotPosition } from './render/layout.js';
 import { drawScene } from './render/scene.js';
 import { PALETTE } from './render/iso.js';
-import { createCity, prepareReward, commitReward, flushRewards, resetCity, rewardPoint, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding, cameraTarget, setCameraStage, loadCity, rebuildCity, CITY_SCHEMA_VERSION } from './render/city.js';
+import { createCity, getCityCanvas, prepareReward, commitReward, flushRewards, resetCity, rewardPoint, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding, cameraTarget, setCameraStage, loadCity, rebuildCity, CITY_SCHEMA_VERSION } from './render/city.js';
 import { createTweenPool, addTween, updateTweens, clearTweens, EASING, setTimeScale } from './anim/tween.js';
 import { createFx, updateFx, spawnSplinters, shakeCamera } from './anim/fx.js';
 import * as sfx from './audio/sfx.js';
-import { createHud, FREE_UNDO, FREE_HINTS } from './ui/hud.js';
+import { createHud } from './ui/hud.js';
 import { createScreens } from './ui/screens.js';
 import { createDebug } from './ui/debug.js';
 import * as platform from './platform/sdk.js';
@@ -65,8 +68,16 @@ const MAX_DPR = 2;
 const LOOSE_LEVEL_NODES = 25000;
 const PAR_MAX_DEPTH = 20;
 const INEXACT_PAR_FACTOR = 0.8;
-const LEVEL_SEED_BASE = 7919;
-const LEVEL_SEED_OFFSET = 13;
+// Уровни трёх режимов: каждый набор сгенерирован офлайн отдельно.
+const LEVEL_SETS = { easy: LEVELS_EASY, normal: LEVELS_NORMAL, hard: LEVELS_HARD };
+// Версия схемы сохранения: v2 — три независимых слота и общие настройки.
+const SAVE_VERSION = 2;
+const SETTINGS_KEY = 'settings';
+// Миниатюра города на карточке режима: город рисуется в свою зону
+// вдвое крупнее карточки, а на карточку попадает её середина —
+// так миниатюра не сплющена и не мыльная.
+const THUMB_WIDTH = 600;
+const THUMB_HEIGHT = 300;
 
 const canvas = document.getElementById('scene');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -78,7 +89,13 @@ const app = {
   level: 1,
   state: null,
   history: createHistory(),
+  mode: DEFAULT_MODE,
+  // Города всех режимов живут рядом: миниатюры на экране выбора рисуются
+  // из настоящих городов, а не из заглушек.
+  cities: {},
+  slots: {},
   city: createCity(),
+  starsByLevel: [],
   fx: createFx(),
   tweens: createTweenPool(),
   hand: null,
@@ -110,6 +127,11 @@ const app = {
   progress: { level: 1 }
 };
 
+// Пустой слот режима: уровень, звёзды по уровням, город, медаль.
+function emptySlot() {
+  return { level: 1, stars: [], city: [], props: [], citySchemaVersion: CITY_SCHEMA_VERSION, medal: null };
+}
+
 const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 if (reducedMotion) {
   setTimeScale(0.4);
@@ -127,7 +149,7 @@ const hud = createHud({
 const debug = createDebug();
 
 const screens = createScreens({
-  play: () => startGame(),
+  play: (mode) => startGame(mode),
   next: () => nextLevel(),
   openSettings: () => screens.showSettings(app.settings, app.screen === 'game'),
   closeSettings: () => {
@@ -147,9 +169,12 @@ const screens = createScreens({
     app.settings.vibro = !app.settings.vibro;
     screens.showSettings(app.settings, app.screen === 'game');
   },
+  // Сбрасывается только текущий режим — остальные не трогаем.
   resetProgress: () => {
     app.progress.level = 1;
     app.level = 1;
+    app.starsByLevel.length = 0;
+    app.slots[app.mode].medal = null;
     resetCity(app.city);
     persist();
     screens.hideSettings();
@@ -189,8 +214,9 @@ function rebuildLayout(width, height) {
 // Уровни после 60-го считаются на лету — один раз при старте уровня,
 // а не на каждый ход. par считается так же, как в офлайн-генераторе.
 function levelData(id) {
-  if (id <= LEVELS.length) return LEVELS[id - 1];
-  const level = generateLevel(id, (id * LEVEL_SEED_BASE + LEVEL_SEED_OFFSET) >>> 0);
+  const list = LEVEL_SETS[app.mode];
+  if (id <= list.length) return list[id - 1];
+  const level = generateLevel(app.mode, id, levelSeed(app.mode, id));
   const optimal = findOptimal(level.posts, level.capacity, PAR_MAX_DEPTH, LOOSE_LEVEL_NODES);
   return {
     id,
@@ -239,18 +265,40 @@ function updateHud() {
   });
 }
 
-function startGame() {
+function startGame(mode) {
+  const chosen = MODE_IDS.indexOf(mode) >= 0 ? mode : app.mode;
+  app.mode = chosen;
+  app.settings.mode = chosen;
+  app.city = app.cities[chosen];
+  app.starsByLevel = app.slots[chosen].stars;
+  app.progress.level = app.slots[chosen].level;
+  hud.setLimits(modeConfig(chosen).free);
   app.screen = 'game';
   screens.hideAll();
   hud.show();
   startLevel(app.progress.level);
+  persist();
 }
 
+// Экран выбора режима: на каждой карточке настоящий город этого режима.
 function openMenu() {
   app.screen = 'menu';
   platform.gameplayStop();
   hud.hide();
-  screens.showMenu(app.progress.level);
+  const states = {};
+  const rect = { x: 0, y: 0, width: THUMB_WIDTH, height: THUMB_HEIGHT };
+  MODE_IDS.forEach((mode) => {
+    const slot = app.slots[mode];
+    const city = app.cities[mode];
+    states[mode] = {
+      started: slot.level > 1 || city.buildings.length > 0,
+      level: slot.level,
+      stars: totalStars(slot.stars),
+      medal: slot.medal,
+      thumb: getCityCanvas(city, rect)
+    };
+  });
+  screens.showMenu(states);
 }
 
 function restartLevel() {
@@ -657,7 +705,15 @@ function checkWin() {
   app.winning = true;
   platform.gameplayStop();
   sfx.playWin();
-  app.progress.level = app.level + 1;
+  // Звёзды хранятся по уровням, и сохраняется лучший результат:
+  // переигрывание с худшим счётом ничего не отнимает.
+  const earned = stars(app.state.moves, app.state.parMoves);
+  const index = app.level - 1;
+  if (index >= 0 && index < LEVEL_COUNT && earned > (app.starsByLevel[index] || 0)) {
+    app.starsByLevel[index] = earned;
+  }
+  app.progress.level = Math.max(app.progress.level, app.level + 1);
+  app.slots[app.mode].medal = medalFor(app.starsByLevel);
   persist();
   addTween(app.tweens, {
     duration: 420,
@@ -715,7 +771,7 @@ function fadeTransition(action) {
 
 async function requestUndo() {
   if (app.busy || !canUndo(app.history)) return;
-  if (app.undoUsed >= FREE_UNDO && !(await earnReward())) return;
+  if (app.undoUsed >= modeConfig(app.mode).free.undo && !(await earnReward())) return;
   const snapshot = popHistory(app.history);
   if (!snapshot) return;
   cancelRewards();
@@ -733,7 +789,7 @@ async function requestUndo() {
 
 async function requestHint() {
   if (app.busy) return;
-  if (app.hintsUsed >= FREE_HINTS && !(await earnReward())) return;
+  if (app.hintsUsed >= modeConfig(app.mode).free.hint && !(await earnReward())) return;
   const move = findHint(app.state.posts, app.state.capacity);
   if (!move) {
     screens.toast('Ходов не осталось — попробуй «Заново»');
@@ -768,42 +824,93 @@ async function earnReward() {
 
 // --- сохранение -----------------------------------------------------------
 
+// Слот режима собирается из живого состояния, остальные слоты остаются
+// как есть: переключение режима не должно задевать чужой прогресс.
 function persist() {
-  platform.save({
-    level: app.progress.level,
-    citySchemaVersion: CITY_SCHEMA_VERSION,
-    city: app.city.buildings,
-    props: app.city.props,
+  const slot = app.slots[app.mode];
+  slot.level = app.progress.level;
+  slot.stars = app.starsByLevel;
+  slot.citySchemaVersion = CITY_SCHEMA_VERSION;
+  slot.city = app.city.buildings;
+  slot.props = app.city.props;
+  const data = {};
+  data[SETTINGS_KEY] = {
+    version: SAVE_VERSION,
     muted: app.settings.muted,
-    vibro: app.settings.vibro
+    vibro: app.settings.vibro,
+    mode: app.mode
+  };
+  MODE_IDS.forEach((mode) => {
+    data[slotKey(mode)] = app.slots[mode];
   });
+  platform.save(data);
+}
+
+function slotKey(mode) {
+  return `save:v1:${mode}`;
 }
 
 // Сколько столбиков собрано за пройденные уровни: по одному на цвет.
-function columnsFor(levels) {
+function columnsFor(mode, levels) {
+  const list = LEVEL_SETS[mode];
   let total = 0;
   for (let i = 0; i < levels; i += 1) {
-    total += LEVELS[Math.min(i, LEVELS.length - 1)].colors;
+    total += list[Math.min(i, list.length - 1)].colors;
   }
   return total;
 }
 
 async function restore() {
-  const data = await platform.load();
-  if (!data) return;
-  app.progress.level = Math.max(1, Number(data.level) || 1);
-  app.settings.muted = Boolean(data.muted);
-  app.settings.vibro = data.vibro !== false;
-  // Сохранение старой версии не читаем по частям: город собирается
-  // заново по актуальным правилам — из числа пройденных уровней (дома)
-  // и числа собранных за них столбиков (декорации).
-  if (data.citySchemaVersion === CITY_SCHEMA_VERSION && Array.isArray(data.city)) {
-    loadCity(app.city, data.city, Array.isArray(data.props) ? data.props : []);
-  } else {
-    const passed = app.progress.level - 1;
-    rebuildCity(app.city, passed, columnsFor(passed));
+  const data = (await platform.load()) || {};
+  const settings = data[SETTINGS_KEY];
+  if (settings) {
+    app.settings.muted = Boolean(settings.muted);
+    app.settings.vibro = settings.vibro !== false;
+    if (MODE_IDS.indexOf(settings.mode) >= 0) app.mode = settings.mode;
+  } else if (data.level !== undefined) {
+    // Сохранение до режимов: настройки общие, прогресс уходит в средний.
+    app.settings.muted = Boolean(data.muted);
+    app.settings.vibro = data.vibro !== false;
+    app.mode = DEFAULT_MODE;
   }
+  MODE_IDS.forEach((mode) => {
+    app.slots[mode] = readSlot(data, mode);
+  });
+  MODE_IDS.forEach((mode) => {
+    const slot = app.slots[mode];
+    const city = createCity([], [], modeConfig(mode).material);
+    if (slot.citySchemaVersion === CITY_SCHEMA_VERSION && Array.isArray(slot.city)) {
+      loadCity(city, slot.city, Array.isArray(slot.props) ? slot.props : []);
+    } else {
+      // Город старой схемы пересобирается по актуальным правилам —
+      // из числа пройденных уровней и собранных за них столбиков.
+      const passed = Math.max(0, slot.level - 1);
+      rebuildCity(city, passed, columnsFor(mode, passed));
+    }
+    app.cities[mode] = city;
+  });
+  app.city = app.cities[app.mode];
+  app.slots[app.mode].stars = app.slots[app.mode].stars || [];
+  app.starsByLevel = app.slots[app.mode].stars;
+  app.progress.level = app.slots[app.mode].level;
   sfx.setMuted(app.settings.muted);
+}
+
+// Слот режима из сохранения. Прогресс до режимов переносится в средний:
+// нынешняя кривая сложности ближе всего к нему.
+function readSlot(data, mode) {
+  const slot = emptySlot();
+  const stored = data[slotKey(mode)];
+  const legacy = !data[SETTINGS_KEY] && mode === DEFAULT_MODE && data.level !== undefined ? data : null;
+  const source = stored || legacy;
+  if (!source) return slot;
+  slot.level = Math.max(1, Number(source.level) || 1);
+  slot.stars = Array.isArray(source.stars) ? source.stars.slice(0, LEVEL_COUNT) : [];
+  slot.medal = source.medal || null;
+  slot.citySchemaVersion = source.citySchemaVersion;
+  slot.city = Array.isArray(source.city) ? source.city : [];
+  slot.props = Array.isArray(source.props) ? source.props : [];
+  return slot;
 }
 
 // --- цикл -----------------------------------------------------------------

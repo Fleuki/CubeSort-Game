@@ -174,7 +174,7 @@ function drawBurstRing(ctx, view, burst) {
 function drawFlyingReward(ctx, view) {
   for (let i = 0; i < view.rewards.length; i += 1) {
     const reward = view.rewards[i];
-    if (reward.flying) drawRewardAt(ctx, reward.pending, reward.x, reward.y, reward.unit, reward.angle);
+    if (reward.flying) drawRewardAt(ctx, view.city, reward.pending, reward.x, reward.y, reward.unit, reward.angle);
   }
 }
 

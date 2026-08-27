@@ -1,6 +1,11 @@
-// Экраны: загрузка, главный, победа, настройки. Тоже чистый DOM.
+// Экраны: загрузка, выбор режима, победа, настройки. Тоже чистый DOM.
+// Миниатюры городов на карточках рисует город — здесь только вставка.
+
+import { MODE_IDS, MODES, MEDAL_TITLES, LEVEL_COUNT, STARS_MAX } from '../game/modes.js';
 
 const TOAST_MS = 1600;
+// Откуда в городе начинается полоса миниатюры.
+const THUMB_TOP = 0.24;
 
 export function createScreens(handlers) {
   const nodes = {
@@ -10,7 +15,16 @@ export function createScreens(handlers) {
     settings: document.getElementById('screen-settings')
   };
   const progressBar = document.getElementById('progress-bar');
-  const menuLevel = document.getElementById('menu-level');
+  const modeCards = {};
+  MODE_IDS.forEach((mode) => {
+    modeCards[mode] = {
+      root: document.getElementById(`mode-${mode}`),
+      city: document.getElementById(`mode-city-${mode}`),
+      progress: document.getElementById(`mode-progress-${mode}`),
+      stars: document.getElementById(`mode-stars-${mode}`)
+    };
+    modeCards[mode].root.addEventListener('click', () => handlers.play(mode));
+  });
   const winStars = document.getElementById('win-stars');
   const winStats = document.getElementById('win-stats');
   const winCity = document.getElementById('win-city');
@@ -20,7 +34,6 @@ export function createScreens(handlers) {
   const restartButton = document.getElementById('btn-restart');
   let toastTimer = 0;
 
-  document.getElementById('btn-play').addEventListener('click', handlers.play);
   document.getElementById('btn-next').addEventListener('click', handlers.next);
   document.getElementById('btn-menu-settings').addEventListener('click', handlers.openSettings);
   document.getElementById('btn-close-settings').addEventListener('click', handlers.closeSettings);
@@ -28,6 +41,16 @@ export function createScreens(handlers) {
   document.getElementById('btn-vibro').addEventListener('click', handlers.toggleVibro);
   document.getElementById('btn-reset').addEventListener('click', handlers.resetProgress);
   document.getElementById('btn-restart').addEventListener('click', handlers.restart);
+
+  // Миниатюра — вырезка из настоящего города режима: берём полосу
+  // с площадкой и застройкой один в один, без растяжения.
+  function paintThumb(canvas, source) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!source) return;
+    const top = Math.max(0, Math.round(source.height * THUMB_TOP));
+    ctx.drawImage(source, 0, top, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+  }
 
   function hideAll() {
     Object.keys(nodes).forEach((key) => nodes[key].classList.add('hidden'));
@@ -41,9 +64,23 @@ export function createScreens(handlers) {
       hideAll();
       nodes.loading.classList.remove('hidden');
     },
-    showMenu(level) {
+    // Каждая карточка показывает свой город, свой уровень и свои звёзды.
+    showMenu(states) {
       hideAll();
-      menuLevel.textContent = `Уровень ${level}`;
+      MODE_IDS.forEach((mode) => {
+        const card = modeCards[mode];
+        const state = states[mode];
+        card.root.querySelector('.mode-title').textContent = MODES[mode].title;
+        if (state.started) {
+          card.progress.textContent = `Уровень ${Math.min(state.level, LEVEL_COUNT)} / ${LEVEL_COUNT}`;
+          const medal = state.medal ? ` · ${MEDAL_TITLES[state.medal]}` : '';
+          card.stars.textContent = `Звёзд ${state.stars} / ${STARS_MAX}${medal}`;
+        } else {
+          card.progress.textContent = MODES[mode].note;
+          card.stars.textContent = 'Не начат';
+        }
+        paintThumb(card.city, state.thumb);
+      });
       nodes.menu.classList.remove('hidden');
     },
     showWin({ stars, moves, cityCount }) {
