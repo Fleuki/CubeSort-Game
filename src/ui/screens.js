@@ -1,7 +1,7 @@
 // Экраны: загрузка, выбор режима, победа, настройки. Тоже чистый DOM.
 // Миниатюры городов на карточках рисует город — здесь только вставка.
 
-import { MODE_IDS, MODES, MEDAL_TITLES, LEVEL_COUNT, STARS_MAX } from '../game/modes.js';
+import { MODE_IDS, MODES, MEDAL_COLORS, LEVEL_COUNT } from '../game/modes.js';
 
 const TOAST_MS = 1600;
 // Откуда в городе начинается полоса миниатюры.
@@ -21,11 +21,10 @@ export function createScreens(handlers) {
       root: document.getElementById(`mode-${mode}`),
       city: document.getElementById(`mode-city-${mode}`),
       progress: document.getElementById(`mode-progress-${mode}`),
-      stars: document.getElementById(`mode-stars-${mode}`)
+      medal: document.getElementById(`mode-medal-${mode}`)
     };
     modeCards[mode].root.addEventListener('click', () => handlers.play(mode));
   });
-  const winStars = document.getElementById('win-stars');
   const winStats = document.getElementById('win-stats');
   const winCity = document.getElementById('win-city');
   const soundState = document.getElementById('sound-state');
@@ -64,31 +63,24 @@ export function createScreens(handlers) {
       hideAll();
       nodes.loading.classList.remove('hidden');
     },
-    // Каждая карточка показывает свой город, свой уровень и свои звёзды.
+    // Каждая карточка показывает свой город, свой уровень и медаль за режим.
     showMenu(states) {
       hideAll();
       MODE_IDS.forEach((mode) => {
         const card = modeCards[mode];
         const state = states[mode];
-        card.root.querySelector('.mode-title').textContent = MODES[mode].title;
-        if (state.started) {
-          card.progress.textContent = `Уровень ${Math.min(state.level, LEVEL_COUNT)} / ${LEVEL_COUNT}`;
-          const medal = state.medal ? ` · ${MEDAL_TITLES[state.medal]}` : '';
-          card.stars.textContent = `Звёзд ${state.stars} / ${STARS_MAX}${medal}`;
-        } else {
-          card.progress.textContent = MODES[mode].note;
-          card.stars.textContent = 'Не начат';
-        }
+        card.progress.textContent = state.started
+          ? `Уровень ${Math.min(state.level, LEVEL_COUNT)} / ${LEVEL_COUNT}`
+          : `${MODES[mode].note} · не начат`;
+        // Медаль — кружок в цвет металла, без подписи.
+        card.medal.classList.toggle('hidden', !state.medal);
+        if (state.medal) card.medal.style.background = MEDAL_COLORS[state.medal];
         paintThumb(card.city, state.thumb);
       });
       nodes.menu.classList.remove('hidden');
     },
-    showWin({ stars, moves, cityCount }) {
+    showWin({ moves, cityCount }) {
       hideAll();
-      const items = winStars.children;
-      for (let i = 0; i < items.length; i += 1) {
-        items[i].classList.toggle('off', i >= stars);
-      }
       winStats.textContent = `Ходов: ${moves}`;
       winCity.textContent = `Домов в городе: ${cityCount}`;
       nodes.win.classList.remove('hidden');

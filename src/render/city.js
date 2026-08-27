@@ -48,6 +48,9 @@ const LAMP_EVERY = 4;
 // уже стоящих остаётся зазор. Не нашлось места за столько попыток —
 // площадка считается полной.
 const PLACE_ATTEMPTS = 40;
+// Сдвиг из-под памятника: участков в конце игры почти не осталось,
+// поэтому перебираем всю спираль, а не сорок ближайших точек.
+const DISPLACE_ATTEMPTS = 400;
 const PLOT_SLACK = 1.15;
 const MIN_GAP = 0.25;
 // Изометрия сжимает глубину, поэтому мало развести основания: объект,
@@ -78,6 +81,10 @@ const ROOF_DARK = -0.18;
 // Пятно тени шире основания: под самим кубиком его не видно —
 // низ детали накрывает пятно целиком.
 const SHADOW_SPREAD = 1.6;
+// Тёплая волна свечения от памятника расходится по всей площадке.
+const MONUMENT_GLOW = '#FFD98A';
+const MONUMENT_GLOW_SPREAD = 3.4;
+const MONUMENT_GLOW_ALPHA = 0.5;
 // Волна по площадке в момент приземления награды.
 const RIPPLE_FROM = 0.3;
 const RIPPLE_TO = 2.2;
@@ -98,6 +105,18 @@ const MATERIALS = {
   glass: { roof: 'flat', window: WINDOW_TALL, cool: 0.1, darker: 0.1, plinth: 0, lamp: '#8C97A0', lampWidth: 0.75, antenna: true }
 };
 const TILE_ROWS = 4;
+// Памятник за пройденный режим: постамент и обелиск из трёх кубиков,
+// сужающихся кверху. Ширина — в долях кубика, высота — в CITY_UNIT.
+const MONUMENT_PEDESTAL = { width: 1.15, height: 1 };
+const MONUMENT_STEPS = [
+  { width: 0.72, height: 1 },
+  { width: 0.56, height: 1 },
+  { width: 0.4, height: 1 }
+];
+// Радиус шире здания: вокруг памятника остаётся просвет, иначе его
+// закрывают соседние башни.
+const MONUMENT_RADIUS = CUBE_WIDTH_UNITS;
+const MONUMENT_HEIGHT = MONUMENT_PEDESTAL.height + MONUMENT_STEPS.reduce((sum, step) => sum + step.height, 0);
 const styleCache = new Map();
 
 export function materialOf(city) {
@@ -123,8 +142,11 @@ function blockStyle(material, base, lit) {
 export function createCity(buildings = [], props = [], material = 'wood') {
   const city = {
     material,
+    monument: null,
     buildings: buildings.slice(),
     props: props.slice(),
+    // Памятник выезжает снизу: пока идёт анимация, макет перепекается.
+    monumentRise: 1,
     // Награды в полёте занимают место в реестре: две одновременные
     // не должны выбрать одну и ту же точку.
     pendings: [],
@@ -328,13 +350,55 @@ export function commitReward(city, pending) {
 
 // Загрузка сохранения: объекты приходят готовыми, порядок создания
 // восстанавливается по seq.
-export function loadCity(city, buildings, props) {
+export function loadCity(city, buildings, props, monument) {
   city.buildings = buildings.slice();
   city.props = props.slice();
+  city.monument = monument || null;
+  city.monumentRise = 1;
   city.pendings.length = 0;
   normalizeSeq(city);
   syncCamera(city);
   touch(city);
+}
+
+// Памятник ставится строго в центр площадки. Если центр занят, объект
+// оттуда переезжает на ближайший свободный участок филлотаксиса.
+export function grantMonument(city, medal, color) {
+  if (city.monument) return false;
+  city.monument = { medal, color };
+  // По умолчанию памятник уже стоит: выезд снизу запускает вызывающий код.
+  city.monumentRise = 1;
+  touch(city);
+  // Место памятника проверяется тем же правилом, что и все участки:
+  // и по горизонтали, и по глубине — иначе его закроют телом соседа.
+  const spot = [{ item: city.monument, u: 0, v: 0, r: MONUMENT_RADIUS, h: MONUMENT_HEIGHT }];
+  const displaced = [];
+  const items = city.buildings.concat(city.props);
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i];
+    if (item.plot < 0) continue;
+    const point = plotWorld(item.plot, item.seed);
+    if (fits(spot, point, radiusOf(item), heightOf(item), item)) continue;
+    displaced.push(item);
+  }
+  for (let i = 0; i < displaced.length; i += 1) {
+    const item = displaced[i];
+    const home = item.plot;
+    item.plot = -1;
+    touch(city);
+    // Площадка к финалу забита, поэтому ищем дольше обычного; если
+    // свободного участка нет вовсе — постройка остаётся на месте:
+    // тесно стоящий дом лучше исчезнувшего.
+    const plot = findPlot(city, item, DISPLACE_ATTEMPTS);
+    item.plot = plot >= 0 ? plot : home;
+    touch(city);
+  }
+  return true;
+}
+
+export function monumentRise(city, value) {
+  city.monumentRise = value;
+  city.dirty = true;
 }
 
 // Награды, не долетевшие до города к концу уровня, всё равно заработаны.
@@ -346,6 +410,8 @@ export function resetCity(city) {
   city.buildings.length = 0;
   city.props.length = 0;
   city.pendings.length = 0;
+  city.monument = null;
+  city.monumentRise = 1;
   city.seq = 0;
   syncCamera(city);
   touch(city);
@@ -612,6 +678,10 @@ function placesOf(city) {
     all.push(pending.prop || pending.building);
   }
   all.sort((a, b) => a.seq - b.seq);
+  // Памятник стоит в самом центре и участвует в реестре наравне со всеми.
+  if (city.monument) {
+    places.push({ item: city.monument, u: 0, v: 0, r: MONUMENT_RADIUS, h: MONUMENT_HEIGHT });
+  }
   for (let i = 0; i < all.length; i += 1) {
     const item = all[i];
     if (item.plot < 0) continue;
@@ -628,10 +698,12 @@ function isProp(item) {
 }
 
 function radiusOf(item) {
+  if (item.medal) return MONUMENT_RADIUS;
   return isProp(item) ? propRadius(propKind(item.slot, item.rank)) : BUILDING_RADIUS;
 }
 
 function heightOf(item) {
+  if (item.medal) return MONUMENT_HEIGHT;
   return isProp(item)
     ? propHeightUnits(propKind(item.slot, item.rank))
     : buildingHeightUnits(item.kind, item.floors);
@@ -653,13 +725,13 @@ function fits(places, point, radius, height, ignore) {
 
 // Поиск свободного участка для нового объекта: до PLACE_ATTEMPTS попыток
 // по участкам своего класса, дальше площадка считается полной.
-function findPlot(city, item) {
+function findPlot(city, item, attempts = PLACE_ATTEMPTS) {
   const places = placesOf(city);
   const radius = radiusOf(item);
   const height = heightOf(item);
   const limit = plateRadiusUnits(city.stage) - MIN_GAP;
   let plot = isProp(item) ? plotOfProp(item.slot) : plotOfBuilding(item.index);
-  for (let attempt = 0; attempt < PLACE_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const point = plotWorld(plot, item.seed);
     // За ограду выходить нельзя: это уже не площадка.
     if (Math.hypot(point.u, point.v) + radius <= limit && fits(places, point, radius, height, item)) {
@@ -761,7 +833,7 @@ export function getCityCanvas(city, rect) {
     city.ctx.clearRect(0, 0, w, h);
     drawGround(city.ctx, geo, city);
     const items = sceneItems(geo, city);
-    for (let i = 0; i < items.length; i += 1) paintItem(city.ctx, items[i], materialOf(city));
+    for (let i = 0; i < items.length; i += 1) paintItem(city.ctx, items[i], materialOf(city), city.monumentRise);
     city.dirty = false;
   }
   return city.canvas;
@@ -794,16 +866,21 @@ export function drawRewardAt(ctx, city, pending, x, y, unit, angle) {
 // Лёгкая волна по площадке от места приземления.
 export function drawRipple(ctx, rect, city, ripple) {
   const geo = geometry(rect, city);
-  const radius = geo.unit * CUBE_WIDTH_UNITS * (RIPPLE_FROM + (RIPPLE_TO - RIPPLE_FROM) * ripple.t);
+  const warm = Boolean(ripple.warm);
+  const radius = warm
+    ? geo.rx * ripple.t
+    : geo.unit * CUBE_WIDTH_UNITS * (RIPPLE_FROM + (RIPPLE_TO - RIPPLE_FROM) * ripple.t);
+  const x = warm ? geo.x : ripple.x;
+  const y = warm ? geo.y : ripple.y;
   ctx.save();
   ctx.beginPath();
   ctx.ellipse(geo.x, geo.y, geo.rx, geo.ry, 0, 0, Math.PI * 2);
   ctx.clip();
-  ctx.globalAlpha = RIPPLE_ALPHA * (1 - ripple.t);
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = Math.max(1, geo.unit * 0.12);
+  ctx.globalAlpha = (warm ? MONUMENT_GLOW_ALPHA : RIPPLE_ALPHA) * (1 - ripple.t);
+  ctx.strokeStyle = warm ? MONUMENT_GLOW : '#FFFFFF';
+  ctx.lineWidth = Math.max(1, geo.unit * (warm ? 0.5 : 0.12));
   ctx.beginPath();
-  ctx.ellipse(ripple.x, ripple.y, radius, radius * geo.aspect, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y, radius, radius * geo.aspect, 0, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
 }
@@ -832,11 +909,35 @@ function isPending(city, item) {
   return false;
 }
 
-function paintItem(ctx, entry, material) {
+function paintItem(ctx, entry, material, rise) {
   const item = entry.item;
   const point = entry.point;
-  if (isProp(item)) paintProp(ctx, propKind(item.slot, item.rank), point.x, point.y, point.unit, item.seed, material);
+  if (item.medal) paintMonument(ctx, item, point.x, point.y, point.unit, material, rise);
+  else if (isProp(item)) paintProp(ctx, propKind(item.slot, item.rank), point.x, point.y, point.unit, item.seed, material);
   else paintBuilding(ctx, item, point.x, point.y, point.unit, item.floors, material);
+}
+
+// Памятник: постамент и обелиск из трёх сужающихся кубиков в цвет
+// медали. Отделка — материала режима, как у зданий.
+function paintMonument(ctx, monument, x, groundY, unit, material, rise) {
+  const style = blockStyle(material, monument.color, false);
+  const half = cubeHalf(unit);
+  const hidden = (1 - rise) * MONUMENT_HEIGHT * unit;
+  drawShadow(ctx, x, groundY, MONUMENT_HEIGHT * unit, half * 2 * SHADOW_SPREAD, rise);
+  // Тёплый ореол: без него памятник теряется среди шестикубовых башен.
+  if (rise > 0) glow(ctx, x, groundY - MONUMENT_HEIGHT * unit * 0.5 * rise, half * MONUMENT_GLOW_SPREAD, MONUMENT_HEIGHT * unit);
+  ctx.save();
+  ctx.beginPath();
+  // Выезд снизу: над землёй видна только успевшая подняться часть.
+  ctx.rect(x - half * 3, groundY - MONUMENT_HEIGHT * unit * 2, half * 6, MONUMENT_HEIGHT * unit * 2 + half);
+  ctx.clip();
+  let level = groundY + hidden;
+  level = stackBlock(ctx, x, level, half * MONUMENT_PEDESTAL.width, MONUMENT_PEDESTAL.height * unit, monument.color, false, style);
+  for (let i = 0; i < MONUMENT_STEPS.length; i += 1) {
+    const step = MONUMENT_STEPS[i];
+    level = stackBlock(ctx, x, level, half * step.width, step.height * unit, monument.color, i === MONUMENT_STEPS.length - 1, style);
+  }
+  ctx.restore();
 }
 
 function paintReward(ctx, pending, x, groundY, unit, squash, material) {
@@ -1124,9 +1225,9 @@ function paintProp(ctx, kind, x, groundY, unit, seed, material) {
 
 // Кубик заданной ширины и высоты на уровне baseY. Возвращает уровень
 // верхней грани — на него встаёт следующая деталь.
-function stackBlock(ctx, x, baseY, half, height, color, stud) {
+function stackBlock(ctx, x, baseY, half, height, color, stud, style) {
   const top = baseY - height;
-  drawBlock(ctx, x, top, half, color, height / cubeSideHeight(half));
-  if (stud) drawStud(ctx, x, top, half, color);
+  drawBlock(ctx, x, top, half, color, height / cubeSideHeight(half), -1, style);
+  if (stud) drawStud(ctx, x, top, half, color, style && style.outline);
   return top;
 }

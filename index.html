@@ -49,21 +49,18 @@
     <div class="modes" id="mode-list">
       <button class="mode-card" id="mode-easy" type="button" data-mode="easy">
         <canvas class="mode-city" id="mode-city-easy" width="600" height="144"></canvas>
-        <span class="mode-title">Лёгкий</span>
+        <span class="mode-title">Лёгкий<i class="mode-medal hidden" id="mode-medal-easy"></i></span>
         <span class="mode-progress" id="mode-progress-easy">Не начат</span>
-        <span class="mode-stars" id="mode-stars-easy"></span>
       </button>
       <button class="mode-card" id="mode-normal" type="button" data-mode="normal">
         <canvas class="mode-city" id="mode-city-normal" width="600" height="144"></canvas>
-        <span class="mode-title">Средний</span>
+        <span class="mode-title">Средний<i class="mode-medal hidden" id="mode-medal-normal"></i></span>
         <span class="mode-progress" id="mode-progress-normal">Не начат</span>
-        <span class="mode-stars" id="mode-stars-normal"></span>
       </button>
       <button class="mode-card" id="mode-hard" type="button" data-mode="hard">
         <canvas class="mode-city" id="mode-city-hard" width="600" height="144"></canvas>
-        <span class="mode-title">Сложный</span>
+        <span class="mode-title">Сложный<i class="mode-medal hidden" id="mode-medal-hard"></i></span>
         <span class="mode-progress" id="mode-progress-hard">Не начат</span>
-        <span class="mode-stars" id="mode-stars-hard"></span>
       </button>
     </div>
     <div class="menu-row menu-row-end">
@@ -75,7 +72,6 @@
 <div id="screen-win" class="screen hidden">
   <div class="menu-card">
     <div class="win-title">Уровень пройден</div>
-    <div class="stars" id="win-stars"><span>★</span><span>★</span><span>★</span></div>
     <div class="win-stats" id="win-stats">Ходов: 0</div>
     <div class="win-city" id="win-city">В городе прибавилось домов: 0</div>
     <button class="primary" id="btn-next" type="button">Далее</button>

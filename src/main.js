@@ -5,15 +5,15 @@ import { LEVELS_EASY } from '../levels/levels-easy.js';
 import { LEVELS_NORMAL } from '../levels/levels-normal.js';
 import { LEVELS_HARD } from '../levels/levels-hard.js';
 import { createState } from './game/state.js';
-import { MODE_IDS, DEFAULT_MODE, LEVEL_COUNT, modeConfig, levelSeed, medalFor, totalStars } from './game/modes.js';
-import { takeTopGroup, canMove, applyMove, isSolved, isPostComplete, stars } from './game/rules.js';
+import { MODE_IDS, DEFAULT_MODE, MEDAL_COLORS, modeConfig, levelSeed, medalFor } from './game/modes.js';
+import { takeTopGroup, canMove, applyMove, isSolved, isPostComplete } from './game/rules.js';
 import { generateLevel } from './game/generator.js';
 import { findHint, findOptimal } from './game/solver.js';
 import { createHistory, pushHistory, popHistory, canUndo, clearHistory } from './game/history.js';
 import { computeLayout, hitTest, slotPosition } from './render/layout.js';
 import { drawScene } from './render/scene.js';
 import { PALETTE } from './render/iso.js';
-import { createCity, getCityCanvas, prepareReward, commitReward, flushRewards, resetCity, rewardPoint, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding, cameraTarget, setCameraStage, loadCity, rebuildCity, CITY_SCHEMA_VERSION } from './render/city.js';
+import { createCity, getCityCanvas, grantMonument, monumentRise, prepareReward, commitReward, flushRewards, resetCity, rewardPoint, snapshotCity, restoreCity, completedDistrict, lightingOrder, lightBuilding, cameraTarget, setCameraStage, loadCity, rebuildCity, CITY_SCHEMA_VERSION } from './render/city.js';
 import { createTweenPool, addTween, updateTweens, clearTweens, EASING, setTimeScale } from './anim/tween.js';
 import { createFx, updateFx, spawnSplinters, shakeCamera } from './anim/fx.js';
 import * as sfx from './audio/sfx.js';
@@ -59,6 +59,10 @@ const REWARD_SPIN = (25 * Math.PI) / 180;
 const REWARD_LAND_MS = 180;
 const REWARD_SQUASH_FROM = 0.86;
 const RIPPLE_MS = 320;
+// Памятник за пройденный режим: выезд снизу, потом волна свечения.
+const MONUMENT_RISE_MS = 500;
+const MONUMENT_GLOW_MS = 700;
+const WIN_DELAY_MS = 420;
 const VIBRO_TAKE = 8;
 const VIBRO_PLACE = 12;
 const VIBRO_COMPLETE = 30;
@@ -70,8 +74,8 @@ const PAR_MAX_DEPTH = 20;
 const INEXACT_PAR_FACTOR = 0.8;
 // Уровни трёх режимов: каждый набор сгенерирован офлайн отдельно.
 const LEVEL_SETS = { easy: LEVELS_EASY, normal: LEVELS_NORMAL, hard: LEVELS_HARD };
-// Версия схемы сохранения: v2 — три независимых слота и общие настройки.
-const SAVE_VERSION = 2;
+// Версия схемы сохранения: v3 — слоты без звёзд, медаль за режим.
+const SAVE_VERSION = 3;
 const SETTINGS_KEY = 'settings';
 // Миниатюра города на карточке режима: город рисуется в свою зону
 // вдвое крупнее карточки, а на карточку попадает её середина —
@@ -95,7 +99,6 @@ const app = {
   cities: {},
   slots: {},
   city: createCity(),
-  starsByLevel: [],
   fx: createFx(),
   tweens: createTweenPool(),
   hand: null,
@@ -129,7 +132,7 @@ const app = {
 
 // Пустой слот режима: уровень, звёзды по уровням, город, медаль.
 function emptySlot() {
-  return { level: 1, stars: [], city: [], props: [], citySchemaVersion: CITY_SCHEMA_VERSION, medal: null };
+  return { level: 1, city: [], props: [], citySchemaVersion: CITY_SCHEMA_VERSION, medal: null, monument: null };
 }
 
 const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -173,7 +176,6 @@ const screens = createScreens({
   resetProgress: () => {
     app.progress.level = 1;
     app.level = 1;
-    app.starsByLevel.length = 0;
     app.slots[app.mode].medal = null;
     resetCity(app.city);
     persist();
@@ -256,7 +258,7 @@ function startLevel(id) {
 }
 
 function updateHud() {
-  if (app.state) hud.setGoal(app.state.moves, app.state.parMoves);
+  if (app.state) hud.setGoal(app.state.moves);
   hud.update({
     undoUsed: app.undoUsed,
     hintsUsed: app.hintsUsed,
@@ -270,7 +272,6 @@ function startGame(mode) {
   app.mode = chosen;
   app.settings.mode = chosen;
   app.city = app.cities[chosen];
-  app.starsByLevel = app.slots[chosen].stars;
   app.progress.level = app.slots[chosen].level;
   hud.setLimits(modeConfig(chosen).free);
   app.screen = 'game';
@@ -293,7 +294,6 @@ function openMenu() {
     states[mode] = {
       started: slot.level > 1 || city.buildings.length > 0,
       level: slot.level,
-      stars: totalStars(slot.stars),
       medal: slot.medal,
       thumb: getCityCanvas(city, rect)
     };
@@ -705,28 +705,55 @@ function checkWin() {
   app.winning = true;
   platform.gameplayStop();
   sfx.playWin();
-  // Звёзды хранятся по уровням, и сохраняется лучший результат:
-  // переигрывание с худшим счётом ничего не отнимает.
-  const earned = stars(app.state.moves, app.state.parMoves);
-  const index = app.level - 1;
-  if (index >= 0 && index < LEVEL_COUNT && earned > (app.starsByLevel[index] || 0)) {
-    app.starsByLevel[index] = earned;
-  }
   app.progress.level = Math.max(app.progress.level, app.level + 1);
-  app.slots[app.mode].medal = medalFor(app.starsByLevel);
+  const medal = medalFor(app.mode, app.progress.level);
+  app.slots[app.mode].medal = medal;
+  // Пройден весь режим — в центре площадки встаёт памятник.
+  const raised = medal ? raiseMonument(medal) : false;
   persist();
   addTween(app.tweens, {
-    duration: 420,
+    duration: raised ? MONUMENT_RISE_MS + MONUMENT_GLOW_MS : WIN_DELAY_MS,
     onDone: () => {
       app.screen = 'win';
       hud.hide();
       screens.showWin({
-        stars: stars(app.state.moves, app.state.parMoves),
         moves: app.state.moves,
         cityCount: app.city.buildings.length
       });
     }
   });
+}
+
+// Памятник выезжает снизу, следом по площадке идёт тёплая волна.
+// Тряски камеры здесь нет: это спокойный финал, а не удар.
+function raiseMonument(medal) {
+  if (!grantMonument(app.city, medal, MEDAL_COLORS[medal])) return false;
+  monumentRise(app.city, 0);
+  addTween(app.tweens, {
+    duration: MONUMENT_RISE_MS,
+    easing: EASING.easeOutBack,
+    onUpdate: (t) => {
+      monumentRise(app.city, t);
+    },
+    onDone: () => {
+      monumentRise(app.city, 1);
+    }
+  });
+  const glow = { x: 0, y: 0, t: 0, warm: true };
+  addTween(app.tweens, {
+    delay: MONUMENT_RISE_MS,
+    duration: MONUMENT_GLOW_MS,
+    onStart: () => {
+      app.ripples.push(glow);
+    },
+    onUpdate: (t) => {
+      glow.t = t;
+    },
+    onDone: () => {
+      drop(app.ripples, glow);
+    }
+  });
+  return true;
 }
 
 async function nextLevel() {
@@ -789,12 +816,13 @@ async function requestUndo() {
 
 async function requestHint() {
   if (app.busy) return;
-  if (app.hintsUsed >= modeConfig(app.mode).free.hint && !(await earnReward())) return;
+  // Ищем до оплаты: честный отказ не должен стоить игроку попытки или ролика.
   const move = findHint(app.state.posts, app.state.capacity);
   if (!move) {
-    screens.toast('Ходов не осталось — попробуй «Заново»');
+    screens.toast('Отсюда подсказка не поможет — попробуй отменить ход');
     return;
   }
+  if (app.hintsUsed >= modeConfig(app.mode).free.hint && !(await earnReward())) return;
   app.hand = null;
   app.hint = move;
   app.hintUntil = app.time + HINT_SHOW_MS;
@@ -829,10 +857,10 @@ async function earnReward() {
 function persist() {
   const slot = app.slots[app.mode];
   slot.level = app.progress.level;
-  slot.stars = app.starsByLevel;
   slot.citySchemaVersion = CITY_SCHEMA_VERSION;
   slot.city = app.city.buildings;
   slot.props = app.city.props;
+  slot.monument = app.city.monument;
   const data = {};
   data[SETTINGS_KEY] = {
     version: SAVE_VERSION,
@@ -880,18 +908,21 @@ async function restore() {
     const slot = app.slots[mode];
     const city = createCity([], [], modeConfig(mode).material);
     if (slot.citySchemaVersion === CITY_SCHEMA_VERSION && Array.isArray(slot.city)) {
-      loadCity(city, slot.city, Array.isArray(slot.props) ? slot.props : []);
+      loadCity(city, slot.city, Array.isArray(slot.props) ? slot.props : [], slot.monument);
     } else {
       // Город старой схемы пересобирается по актуальным правилам —
       // из числа пройденных уровней и собранных за них столбиков.
       const passed = Math.max(0, slot.level - 1);
       rebuildCity(city, passed, columnsFor(mode, passed));
     }
+    // Режим уже пройден — памятник стоит с самого начала, без анимации.
+    if (slot.medal && !city.monument) grantMonument(city, slot.medal, MEDAL_COLORS[slot.medal]);
+    // Слот держит памятник вместе с городом: иначе он живёт только
+    // в памяти и при следующей записи неактивного режима пропадёт.
+    slot.monument = city.monument;
     app.cities[mode] = city;
   });
   app.city = app.cities[app.mode];
-  app.slots[app.mode].stars = app.slots[app.mode].stars || [];
-  app.starsByLevel = app.slots[app.mode].stars;
   app.progress.level = app.slots[app.mode].level;
   sfx.setMuted(app.settings.muted);
 }
@@ -905,11 +936,12 @@ function readSlot(data, mode) {
   const source = stored || legacy;
   if (!source) return slot;
   slot.level = Math.max(1, Number(source.level) || 1);
-  slot.stars = Array.isArray(source.stars) ? source.stars.slice(0, LEVEL_COUNT) : [];
-  slot.medal = source.medal || null;
+  // Медаль пересчитывается по режиму: звёзд в схеме больше нет.
+  slot.medal = medalFor(mode, slot.level);
   slot.citySchemaVersion = source.citySchemaVersion;
   slot.city = Array.isArray(source.city) ? source.city : [];
   slot.props = Array.isArray(source.props) ? source.props : [];
+  slot.monument = source.monument || null;
   return slot;
 }
 

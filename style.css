@@ -140,20 +140,6 @@ html, body {
   white-space: nowrap;
 }
 
-.level-goal.pulse {
-  animation: goal-pulse 620ms ease-out;
-}
-
-@keyframes goal-pulse {
-  0% { opacity: 0.55; transform: scale(1); }
-  30% { opacity: 1; transform: scale(1.08); }
-  100% { opacity: 0.55; transform: scale(1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .level-goal.pulse { animation-duration: 240ms; }
-}
-
 .tool {
   pointer-events: auto;
   position: relative;
@@ -276,8 +262,8 @@ html, body {
 
 .mode-card {
   display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas: 'city city' 'title stars' 'progress stars';
+  grid-template-columns: 1fr;
+  grid-template-areas: 'city' 'title' 'progress';
   align-items: center;
   gap: 2px 10px;
   width: 100%;
@@ -309,18 +295,21 @@ html, body {
   font-size: 16px;
 }
 
+/* Медаль — кружок в цвет металла рядом с названием режима. */
+.mode-medal {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+
 .mode-progress {
   grid-area: progress;
   font-size: 12px;
   opacity: 0.7;
-}
-
-.mode-stars {
-  grid-area: stars;
-  font-size: 12px;
-  opacity: 0.7;
-  text-align: right;
-  white-space: nowrap;
 }
 
 .menu-row {
@@ -350,8 +339,6 @@ html, body {
   margin-bottom: 10px;
 }
 
-.stars { font-size: 34px; letter-spacing: 6px; color: #E2A238; margin-bottom: 8px; }
-.stars span.off { color: rgba(46, 42, 36, 0.18); }
 
 .win-stats { font-size: 14px; opacity: 0.7; }
 .win-city { font-size: 13px; opacity: 0.62; margin: 6px 0 18px; }

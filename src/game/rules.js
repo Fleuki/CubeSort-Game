@@ -72,9 +72,3 @@ export function isSolved(posts, capacity) {
   }
   return true;
 }
-
-export function stars(moves, parMoves) {
-  if (moves <= parMoves) return 3;
-  if (moves <= Math.ceil(parMoves * 1.5)) return 2;
-  return 1;
-}

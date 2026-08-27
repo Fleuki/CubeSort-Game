@@ -6,13 +6,11 @@ export const MODE_IDS = ['easy', 'normal', 'hard'];
 export const DEFAULT_MODE = 'normal';
 
 export const LEVEL_COUNT = 60;
-export const STARS_PER_LEVEL = 3;
-export const STARS_MAX = LEVEL_COUNT * STARS_PER_LEVEL;
 
-// Медаль считается после прохождения всех уровней режима.
-const MEDAL_GOLD = 165;
-const MEDAL_SILVER = 130;
-export const MEDAL_TITLES = { gold: 'Золото', silver: 'Серебро', bronze: 'Бронза' };
+// Медаль зависит только от того, какой режим пройден целиком: качество
+// игры она не измеряет. Цвета — металл значка на карточке режима.
+const MEDAL_BY_MODE = { easy: 'bronze', normal: 'silver', hard: 'gold' };
+export const MEDAL_COLORS = { bronze: '#A8703C', silver: '#B9BCC2', gold: '#D9A62B' };
 
 // Полосы кривой: до какого уровня действует, сколько цветов (от и до),
 // вместимость столбика и сколько столбиков сверх числа цветов.
@@ -100,27 +98,7 @@ export function levelSeed(mode, id) {
   return (id * modeConfig(mode).seedBase + 13) >>> 0;
 }
 
-export function starsMax() {
-  return STARS_MAX;
-}
-
-// Медаль даётся только после того, как пройдены все уровни режима.
-export function medalFor(stars) {
-  let total = 0;
-  let passed = 0;
-  for (let i = 0; i < LEVEL_COUNT; i += 1) {
-    const value = stars[i] || 0;
-    total += value;
-    if (value > 0) passed += 1;
-  }
-  if (passed < LEVEL_COUNT) return null;
-  if (total >= MEDAL_GOLD) return 'gold';
-  if (total >= MEDAL_SILVER) return 'silver';
-  return 'bronze';
-}
-
-export function totalStars(stars) {
-  let total = 0;
-  for (let i = 0; i < stars.length; i += 1) total += stars[i] || 0;
-  return total;
+// Медаль даётся за пройденные все уровни режима — и только за это.
+export function medalFor(mode, level) {
+  return level > LEVEL_COUNT ? MEDAL_BY_MODE[mode] || null : null;
 }
