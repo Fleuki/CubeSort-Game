@@ -660,10 +660,27 @@ window.addEventListener('orientationchange', resize);
 document.addEventListener('contextmenu', (event) => event.preventDefault());
 document.addEventListener('gesturestart', (event) => event.preventDefault());
 document.addEventListener('dblclick', (event) => event.preventDefault());
+document.addEventListener('selectstart', (event) => event.preventDefault());
+document.addEventListener('dragstart', (event) => event.preventDefault());
+
+// Страховка от браузерной прокрутки поверх CSS-фиксации (§1.10.2):
+// протяжка пальцем, колесо мыши и «скроллящие» клавиши не должны двигать
+// страницу. Игра слушает только pointerdown, поэтому глушить их безопасно.
+const SCROLL_KEYS = [' ', 'PageUp', 'PageDown', 'Home', 'End',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+document.addEventListener('touchmove', (event) => event.preventDefault(), { passive: false });
+window.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
+window.addEventListener('keydown', (event) => {
+  if (SCROLL_KEYS.includes(event.key)) event.preventDefault();
+});
 
 document.addEventListener('visibilitychange', () => {
   setPaused(document.hidden);
 });
+// Потеря фокуса окна тоже паузит звук и цикл (§1.3): вкладка может остаться
+// видимой, но неактивной — visibilitychange тогда не срабатывает.
+window.addEventListener('blur', () => setPaused(true));
+window.addEventListener('focus', () => setPaused(false));
 
 window.addEventListener('message', (event) => {
   if (event.data === 'game_api_pause') setPaused(true);

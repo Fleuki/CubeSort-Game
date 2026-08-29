@@ -7,8 +7,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Кубики">
-<title>Кубики</title>
+<meta name="apple-mobile-web-app-title" content="Кубоград">
+<title>Кубоград</title>
+<!-- Инлайновый SVG-фавикон: без бинарного ассета и без запроса favicon.ico,
+     иначе браузер тянет его сам и роняет 404 в консоль. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23F2EADA'/%3E%3Cpath d='M16 5l9 5v12l-9 5-9-5V10z' fill='%239A7B52'/%3E%3Cpath d='M16 5l9 5-9 5-9-5z' fill='%23C0A277'/%3E%3Cpath d='M16 15l9-5v12l-9 5z' fill='%237E6242'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -38,13 +41,13 @@
 </div>
 
 <div id="screen-loading" class="screen">
-  <div class="logo">Кубики</div>
+  <div class="logo">Кубоград</div>
   <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
 </div>
 
 <div id="screen-menu" class="screen hidden">
   <div class="menu-card">
-    <div class="logo">Кубики</div>
+    <div class="logo">Кубоград</div>
     <p class="menu-note">Собери столбик одного цвета — и в городе вырастет дом.</p>
     <button class="primary" id="btn-play" type="button">Играть</button>
     <div class="menu-row">
