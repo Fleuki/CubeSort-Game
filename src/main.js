@@ -134,6 +134,13 @@ function vibrate(ms) {
   navigator.vibrate(ms);
 }
 
+// Игра одноязычная: поддержан только русский. Язык из SDK читается, чтобы
+// выставить корректный lang документа; неподдержанный язык откатывается на ru.
+const SUPPORTED_LANGS = ['ru'];
+function applyLanguage(lang) {
+  document.documentElement.lang = SUPPORTED_LANGS.includes(lang) ? lang : 'ru';
+}
+
 function resize() {
   const width = window.innerWidth;
   const height = window.innerHeight;
@@ -660,10 +667,27 @@ window.addEventListener('orientationchange', resize);
 document.addEventListener('contextmenu', (event) => event.preventDefault());
 document.addEventListener('gesturestart', (event) => event.preventDefault());
 document.addEventListener('dblclick', (event) => event.preventDefault());
+document.addEventListener('selectstart', (event) => event.preventDefault());
+document.addEventListener('dragstart', (event) => event.preventDefault());
+
+// Страховка от браузерной прокрутки поверх CSS-фиксации (§1.10.2):
+// протяжка пальцем, колесо мыши и «скроллящие» клавиши не должны двигать
+// страницу. Игра слушает только pointerdown, поэтому глушить их безопасно.
+const SCROLL_KEYS = [' ', 'PageUp', 'PageDown', 'Home', 'End',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+document.addEventListener('touchmove', (event) => event.preventDefault(), { passive: false });
+window.addEventListener('wheel', (event) => event.preventDefault(), { passive: false });
+window.addEventListener('keydown', (event) => {
+  if (SCROLL_KEYS.includes(event.key)) event.preventDefault();
+});
 
 document.addEventListener('visibilitychange', () => {
   setPaused(document.hidden);
 });
+// Потеря фокуса окна тоже паузит звук и цикл (§1.3): вкладка может остаться
+// видимой, но неактивной — visibilitychange тогда не срабатывает.
+window.addEventListener('blur', () => setPaused(true));
+window.addEventListener('focus', () => setPaused(false));
 
 window.addEventListener('message', (event) => {
   if (event.data === 'game_api_pause') setPaused(true);
@@ -683,6 +707,10 @@ async function boot() {
   resize();
   screens.setProgress(0.35);
   await platform.initPlatform();
+  // Язык площадки применяем до первого показа UI (§2.14). Поддержан только
+  // русский, поэтому детект лишь подтверждает язык интерфейса, а не
+  // переключает его — системы локализации в игре нет.
+  applyLanguage(platform.language());
   screens.setProgress(0.6);
   await restore();
   sfx.initAudio();

@@ -7,6 +7,9 @@ export function createNoneAdapter() {
   return {
     name: 'none',
     async init() {},
+    language() {
+      return 'ru';
+    },
     ready() {},
     gameplayStart() {},
     gameplayStop() {},

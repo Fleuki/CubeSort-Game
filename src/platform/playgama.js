@@ -6,11 +6,21 @@ const SAVE_KEY = 'save';
 
 export function createPlaygamaAdapter() {
   const bridge = window.bridge;
+  let lang = 'ru';
 
   return {
     name: 'playgama',
     async init() {
       if (bridge && bridge.initialize) await bridge.initialize();
+      // Язык моста читаем до UI — симметрично Яндексу (§2.14).
+      try {
+        lang = (bridge && bridge.platform && bridge.platform.language) || 'ru';
+      } catch (error) {
+        lang = 'ru';
+      }
+    },
+    language() {
+      return lang;
     },
     ready() {
       if (bridge && bridge.platform && bridge.platform.sendMessage) {
