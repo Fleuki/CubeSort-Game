@@ -41,6 +41,10 @@ const VIBRO_COMPLETE = 30;
 const PENDING_LIMIT = 2;
 const MAX_DELTA = 50;
 const MAX_DPR = 2;
+// Игра портретная. На широком экране сцена — центрированная вертикальная
+// рамка шириной не больше PORTRAIT_RATIO от высоты; по бокам остаются поля,
+// иначе изометрия города расползается по ширине.
+const PORTRAIT_RATIO = 0.56;
 const LOOSE_LEVEL_NODES = 25000;
 const PAR_MAX_DEPTH = 20;
 const INEXACT_PAR_FACTOR = 0.8;
@@ -53,6 +57,8 @@ const ctx = canvas.getContext('2d', { alpha: false });
 const app = {
   screen: 'loading',
   dpr: 1,
+  stageW: 0,
+  stageH: 0,
   layout: null,
   level: 1,
   state: null,
@@ -142,23 +148,35 @@ function applyLanguage(lang) {
 }
 
 function resize() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
+  const winW = window.innerWidth;
+  const winH = window.innerHeight;
+  // На широком экране сцена сжимается до портретной рамки и центрируется;
+  // на телефоне stageW == ширине окна, рамки нет.
+  const stageW = Math.min(winW, Math.round(winH * PORTRAIT_RATIO));
+  const stageH = winH;
+  const left = Math.round((winW - stageW) / 2);
+  app.stageW = stageW;
+  app.stageH = stageH;
   // Выше 2x бюджетные телефоны не тянут.
   app.dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-  canvas.width = Math.round(width * app.dpr);
-  canvas.height = Math.round(height * app.dpr);
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-  rebuildLayout(width, height);
+  canvas.width = Math.round(stageW * app.dpr);
+  canvas.height = Math.round(stageH * app.dpr);
+  canvas.style.width = `${stageW}px`;
+  canvas.style.height = `${stageH}px`;
+  canvas.style.left = `${left}px`;
+  // HUD выравнивается по рамке через CSS-переменные, а не по окну.
+  const root = document.documentElement.style;
+  root.setProperty('--stage-w', `${stageW}px`);
+  root.setProperty('--stage-left', `${left}px`);
+  rebuildLayout(stageW, stageH);
 }
 
 function rebuildLayout(width, height) {
   const postCount = app.state ? app.state.posts.length : 5;
   const capacity = app.state ? app.state.capacity : 4;
   app.layout = computeLayout(
-    width || window.innerWidth,
-    height || window.innerHeight,
+    width || app.stageW || window.innerWidth,
+    height || app.stageH || window.innerHeight,
     postCount,
     capacity
   );
