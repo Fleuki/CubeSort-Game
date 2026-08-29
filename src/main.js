@@ -134,6 +134,13 @@ function vibrate(ms) {
   navigator.vibrate(ms);
 }
 
+// Игра одноязычная: поддержан только русский. Язык из SDK читается, чтобы
+// выставить корректный lang документа; неподдержанный язык откатывается на ru.
+const SUPPORTED_LANGS = ['ru'];
+function applyLanguage(lang) {
+  document.documentElement.lang = SUPPORTED_LANGS.includes(lang) ? lang : 'ru';
+}
+
 function resize() {
   const width = window.innerWidth;
   const height = window.innerHeight;
@@ -700,6 +707,10 @@ async function boot() {
   resize();
   screens.setProgress(0.35);
   await platform.initPlatform();
+  // Язык площадки применяем до первого показа UI (§2.14). Поддержан только
+  // русский, поэтому детект лишь подтверждает язык интерфейса, а не
+  // переключает его — системы локализации в игре нет.
+  applyLanguage(platform.language());
   screens.setProgress(0.6);
   await restore();
   sfx.initAudio();

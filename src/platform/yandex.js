@@ -18,6 +18,7 @@ export function createYandexAdapter() {
   let ysdk = null;
   let player = null;
   let readyCalled = false;
+  let lang = 'ru';
 
   return {
     name: 'yandex',
@@ -25,12 +26,23 @@ export function createYandexAdapter() {
       if (!window.YaGames) await loadScript(SDK_URL);
       ysdk = await window.YaGames.init();
       window.ysdk = ysdk;
+      // Язык площадки читаем через SDK сразу после init, до любого UI (§2.14).
+      // Это требование модерации даже для одноязычной игры: важен сам факт
+      // чтения i18n.lang до интерактивности, а не наличие переводов.
+      try {
+        lang = ysdk.environment.i18n.lang || 'ru';
+      } catch (error) {
+        lang = 'ru';
+      }
       try {
         player = await ysdk.getPlayer({ scopes: false });
       } catch (error) {
         // Игра обязана работать без авторизации — падаем на localStorage.
         player = null;
       }
+    },
+    language() {
+      return lang;
     },
     ready() {
       // LoadingAPI.ready() вызывается ровно один раз.

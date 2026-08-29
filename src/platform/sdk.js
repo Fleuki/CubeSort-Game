@@ -33,6 +33,11 @@ export function platformName() {
   return adapter.name;
 }
 
+// Язык площадки, прочитанный из SDK во время init (§2.14).
+export function language() {
+  return adapter.language ? adapter.language() : 'ru';
+}
+
 export function ready() {
   adapter.ready();
 }

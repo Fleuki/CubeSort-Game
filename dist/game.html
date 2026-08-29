@@ -2898,6 +2898,9 @@ function createNoneAdapter() {
   return {
     name: 'none',
     async init() {},
+    language() {
+      return 'ru';
+    },
     ready() {},
     gameplayStart() {},
     gameplayStop() {},
@@ -2949,6 +2952,7 @@ function createYandexAdapter() {
   let ysdk = null;
   let player = null;
   let readyCalled = false;
+  let lang = 'ru';
 
   return {
     name: 'yandex',
@@ -2956,12 +2960,23 @@ function createYandexAdapter() {
       if (!window.YaGames) await loadScript(SDK_URL);
       ysdk = await window.YaGames.init();
       window.ysdk = ysdk;
+      // Язык площадки читаем через SDK сразу после init, до любого UI (§2.14).
+      // Это требование модерации даже для одноязычной игры: важен сам факт
+      // чтения i18n.lang до интерактивности, а не наличие переводов.
+      try {
+        lang = ysdk.environment.i18n.lang || 'ru';
+      } catch (error) {
+        lang = 'ru';
+      }
       try {
         player = await ysdk.getPlayer({ scopes: false });
       } catch (error) {
         // Игра обязана работать без авторизации — падаем на localStorage.
         player = null;
       }
+    },
+    language() {
+      return lang;
     },
     ready() {
       // LoadingAPI.ready() вызывается ровно один раз.
@@ -3046,11 +3061,21 @@ const SAVE_KEY = 'save';
 
 function createPlaygamaAdapter() {
   const bridge = window.bridge;
+  let lang = 'ru';
 
   return {
     name: 'playgama',
     async init() {
       if (bridge && bridge.initialize) await bridge.initialize();
+      // Язык моста читаем до UI — симметрично Яндексу (§2.14).
+      try {
+        lang = (bridge && bridge.platform && bridge.platform.language) || 'ru';
+      } catch (error) {
+        lang = 'ru';
+      }
+    },
+    language() {
+      return lang;
     },
     ready() {
       if (bridge && bridge.platform && bridge.platform.sendMessage) {
@@ -3167,6 +3192,11 @@ function platformName() {
   return adapter.name;
 }
 
+// Язык площадки, прочитанный из SDK во время init (§2.14).
+function language() {
+  return adapter.language ? adapter.language() : 'ru';
+}
+
 function ready() {
   adapter.ready();
 }
@@ -3203,7 +3233,7 @@ async function load() {
   return adapter.load();
 }
 
-return { initPlatform, platformName, ready, gameplayStart, gameplayStop, canShowInterstitial, showInterstitial, showRewarded, save, load };
+return { initPlatform, platformName, language, ready, gameplayStart, gameplayStop, canShowInterstitial, showInterstitial, showRewarded, save, load };
 })();
 const __src_main_js = (() => {
 // Точка входа: игровой цикл, ввод и склейка модулей.
@@ -3340,6 +3370,13 @@ const screens = createScreens({
 function vibrate(ms) {
   if (!app.settings.vibro || !navigator.vibrate) return;
   navigator.vibrate(ms);
+}
+
+// Игра одноязычная: поддержан только русский. Язык из SDK читается, чтобы
+// выставить корректный lang документа; неподдержанный язык откатывается на ru.
+const SUPPORTED_LANGS = ['ru'];
+function applyLanguage(lang) {
+  document.documentElement.lang = SUPPORTED_LANGS.includes(lang) ? lang : 'ru';
 }
 
 function resize() {
@@ -3908,6 +3945,10 @@ async function boot() {
   resize();
   screens.setProgress(0.35);
   await platform.initPlatform();
+  // Язык площадки применяем до первого показа UI (§2.14). Поддержан только
+  // русский, поэтому детект лишь подтверждает язык интерфейса, а не
+  // переключает его — системы локализации в игре нет.
+  applyLanguage(platform.language());
   screens.setProgress(0.6);
   await restore();
   sfx.initAudio();
