@@ -28,6 +28,20 @@ export function canMove(posts, from, to, capacity) {
   return true;
 }
 
+// Причина отказа для наглядной реакции: 'color' — верхние кубики разного
+// цвета, 'space' — группа не влезает. null — ход разрешён или отказ
+// не из-за этих двух причин (перекладывание целой стопки на пустой штырь).
+// Правила ходов здесь не решаются: это разбор того, что вернул canMove.
+export function moveBlocker(posts, from, to, capacity) {
+  if (canMove(posts, from, to, capacity)) return null;
+  const group = takeTopGroup(posts, from);
+  if (!group) return null;
+  const target = posts[to];
+  if (target.length > 0 && target[target.length - 1] !== group.color) return 'color';
+  if (freeSlots(posts, to, capacity) < group.count) return 'space';
+  return null;
+}
+
 export function applyMove(posts, from, to, capacity) {
   const group = takeTopGroup(posts, from);
   if (!group) return posts;
@@ -71,10 +85,4 @@ export function isSolved(posts, capacity) {
     if (!isPostComplete(posts[i], capacity)) return false;
   }
   return true;
-}
-
-export function stars(moves, parMoves) {
-  if (moves <= parMoves) return 3;
-  if (moves <= Math.ceil(parMoves * 1.5)) return 2;
-  return 1;
 }
