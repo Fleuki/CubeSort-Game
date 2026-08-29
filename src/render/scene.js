@@ -1,18 +1,36 @@
 // Отрисовка кадра целиком. Модуль только читает view — состояние
 // игры он не меняет.
 
-import { drawCube, drawPostBase, drawStuds, SKY_TOP, TABLE, INK, shade } from './iso.js';
+import { drawCube, drawPostBase, drawStuds, drawCap, drawSlotOutline, PALETTE, SKY_TOP, TABLE, FIELD, INK, OUTLINE_DARK, SLOT_ALPHA, mix, shade } from './iso.js';
 import { drawShadow } from './shadow.js';
-import { getCityCanvas } from './city.js';
+import { getCityCanvas, drawReward, drawRewardAt, drawRipple } from './city.js';
 import { slotPosition } from './layout.js';
 import { drawParticles } from '../anim/fx.js';
+import { EASING } from '../anim/tween.js';
 
 const HINT_ALPHA = 0.9;
-const WAVE_HEIGHT = 0.5;
-const WAVE_SPAN = 0.45;
+// Подскок кубика в волне — доля его собственной высоты.
+const WAVE_RISE = 0.06;
+// Подскок длится два шага волны: за один шаг глаз его не успевает поймать.
+const WAVE_HOP_STEPS = 2;
 const HAND_SHADOW_FADE = 0.6;
 const FLIGHT_SHADOW_FADE = 0.7;
-
+// Стык зон: мягкий переход, а не линия.
+const ZONE_BLEND = 40;
+// Вспышка-кольцо при сборке столбика: радиус в ширинах кубика.
+const BURST_FROM = 0.4;
+const BURST_TO = 1.8;
+const BURST_ALPHA = 0.5;
+const BURST_WIDTH = 2.5;
+// Крышка падает с высоты 1.2 кубика.
+const CAP_DROP = 1.2;
+// Отказ по нехватке места: ромбы свободных слотов на миг наливаются.
+const SLOT_FLASH_ALPHA = 0.45;
+// Отказ по цвету: обводка спорящих кубиков светлеет на 40%.
+const DENY_FLASH_LIGHT = 0.4;
+// Ступень квантования вспышки: кеш оттенков не должен пухнуть от
+// каждого промежуточного значения твина.
+const FLASH_STEPS = 20;
 
 export function drawScene(ctx, view) {
   const { layout, fx } = view;
@@ -22,9 +40,11 @@ export function drawScene(ctx, view) {
   ctx.translate(fx.shakeX, fx.shakeY);
   drawCity(ctx, view);
   drawPosts(ctx, view);
+  drawBurst(ctx, view);
   drawHand(ctx, view);
   drawFlight(ctx, view);
   drawParticles(ctx, fx);
+  drawFlyingReward(ctx, view);
   ctx.translate(-fx.shakeX, -fx.shakeY);
   if (view.fade > 0) {
     ctx.globalAlpha = view.fade;
@@ -34,21 +54,31 @@ export function drawScene(ctx, view) {
   }
 }
 
+// Небо и стол над городом остаются прежними, ниже зоны города фон уходит
+// в более тёмный и холодный тон: жёлтый кубик на светлом песке пропадал.
 function drawBackground(ctx, layout) {
-  const gradient = ctx.createLinearGradient(0, 0, 0, layout.height);
+  const cityBottom = layout.city.y + layout.city.height;
+  const height = layout.height;
+  const gradient = ctx.createLinearGradient(0, 0, 0, height);
+  const seam = Math.min(0.999, cityBottom / height);
   gradient.addColorStop(0, SKY_TOP);
-  gradient.addColorStop(0.55, TABLE);
-  gradient.addColorStop(1, shade(TABLE, -0.08));
+  // Цвет на стыке — ровно тот, что давал прежний градиент: выше стыка
+  // ничего не меняется.
+  gradient.addColorStop(seam, mix(SKY_TOP, TABLE, Math.min(1, seam / 0.55)));
+  gradient.addColorStop(Math.min(0.999, (cityBottom + ZONE_BLEND) / height), FIELD);
+  gradient.addColorStop(1, shade(FIELD, -0.08));
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, layout.width, layout.height);
+  ctx.fillRect(0, 0, layout.width, height);
 }
 
 function drawCity(ctx, view) {
   const rect = view.layout.city;
   const canvas = getCityCanvas(view.city, rect);
   ctx.drawImage(canvas, rect.x, rect.y);
-  if (view.cityAppear) {
-    view.cityAppear.draw(ctx, rect);
+  for (let i = 0; i < view.ripples.length; i += 1) drawRipple(ctx, rect, view.city, view.ripples[i]);
+  // Приземлившиеся награды: отскок рисуется поверх запечённого макета.
+  for (let i = 0; i < view.drops.length; i += 1) {
+    drawReward(ctx, rect, view.city, view.drops[i].pending, view.drops[i].squash);
   }
 }
 
@@ -64,43 +94,125 @@ function drawPosts(ctx, view) {
     const post = layout.posts[i];
     const size = layout.size * post.scale;
     const step = layout.step * post.scale;
-    ctx.translate(dx, 0);
-    drawPostBase(ctx, post.x, post.baseY, size);
-    if (view.hint && (view.hint.from === i || view.hint.to === i)) {
-      drawHintMark(ctx, layout, post, view.hintPulse, view.hint.from === i);
-    }
     // Кубики, поднятые в руку или летящие, со штыря убираются —
     // иначе группа рисуется дважды.
     let hiddenTop = view.hidden && view.hidden.post === i ? view.hidden.count : 0;
     if (view.hand && view.hand.from === i) hiddenTop += view.hand.count;
     const visible = posts[i].length - hiddenTop;
+    ctx.translate(dx, 0);
+    drawPostBase(ctx, post.x, post.baseY, size, visible === 0);
+    if (view.hint && (view.hint.from === i || view.hint.to === i)) {
+      drawHintMark(ctx, layout, post, view.hintPulse, view.hint.from === i);
+    }
+    // Вспышка обводки при отказе по цвету — только верхнему кубику цели.
+    const flash = denyFlash(view, i, 'color');
     for (let slot = 0; slot < visible; slot += 1) {
       const pos = slotPosition(layout, i, slot);
-      const wave = waveOffset(view, i, slot, size);
+      const wave = waveOffset(view, i, slot, step);
       const squash = landingSquash(view, i, slot);
-      drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash);
+      const lit = flash > 0 && slot === visible - 1 ? flashOutline(posts[i][slot], flash) : null;
+      drawCube(ctx, pos.x, pos.y - wave, size, posts[i][slot], squash, lit);
     }
-    // Выступы видны только у верхнего кубика: у остальных верхнюю грань
-    // закрывает следующий кубик.
+    drawFreeSlots(ctx, view, i, post, size);
     if (visible > 0) {
       const top = slotPosition(layout, i, visible - 1);
-      drawStuds(ctx, top.x, top.y - waveOffset(view, i, visible - 1, size), size, posts[i][visible - 1]);
+      const topY = top.y - waveOffset(view, i, visible - 1, step);
+      const cap = capState(view, i);
+      // Собранный столбик закрыт крышкой, и выступ под ней не нужен —
+      // крышка на него и надета.
+      if (!cap) drawStuds(ctx, top.x, topY, size, posts[i][visible - 1]);
+      else if (!cap.hidden) drawCap(ctx, top.x, topY - cap.lift * step * CAP_DROP, size, posts[i][visible - 1], cap.squash);
     }
     ctx.translate(-dx, 0);
   }
 }
 
-function waveOffset(view, postIndex, slot, size) {
-  if (!view.wave || view.wave.post !== postIndex) return 0;
-  const local = view.wave.t - slot * WAVE_SPAN;
-  if (local <= 0 || local >= 1) return 0;
-  return Math.sin(local * Math.PI) * size * WAVE_HEIGHT;
+// Свободные слоты: ромбы на тех высотах, где стояли бы кубики. Счёт идёт
+// по состоянию столбика, а не по видимым кубикам, — поэтому поднятая
+// в руку группа ромбов не добавляет.
+function drawFreeSlots(ctx, view, index, post, size) {
+  const height = view.posts[index].length;
+  if (height >= view.capacity) return;
+  const alpha = SLOT_ALPHA + (SLOT_FLASH_ALPHA - SLOT_ALPHA) * denyFlash(view, index, 'space');
+  for (let slot = height; slot < view.capacity; slot += 1) {
+    const pos = slotPosition(view.layout, index, slot);
+    drawSlotOutline(ctx, pos.x, pos.y, size, alpha);
+  }
+}
+
+// Сила вспышки отказа нужного вида для этого столбика: 0 — вспышки нет.
+function denyFlash(view, index, kind) {
+  const deny = view.deny;
+  if (!deny || deny.kind !== kind || deny.index !== index) return 0;
+  return deny.flash;
+}
+
+function flashOutline(colorIndex, flash) {
+  const base = PALETTE[colorIndex % PALETTE.length];
+  const step = Math.round(flash * FLASH_STEPS) / FLASH_STEPS;
+  return shade(shade(base, -OUTLINE_DARK), DENY_FLASH_LIGHT * step);
+}
+
+// null — крышки нет; иначе состояние падения. Пока крышка не долетела,
+// у столбика не рисуется ни она, ни выступ.
+function capState(view, index) {
+  if (!view.completed || !view.completed[index]) return null;
+  for (let i = 0; i < view.caps.length; i += 1) {
+    if (view.caps[i].post === index) return view.caps[i];
+  }
+  return STATIC_CAP;
+}
+
+const STATIC_CAP = { hidden: false, lift: 0, squash: 1 };
+
+function waveOffset(view, postIndex, slot, step) {
+  for (let i = 0; i < view.waves.length; i += 1) {
+    const wave = view.waves[i];
+    if (wave.post !== postIndex) continue;
+    const local = (wave.t - slot) / WAVE_HOP_STEPS;
+    if (local <= 0 || local >= 1) return 0;
+    const shape = local < 0.5 ? EASING.easeOutBack(local * 2) : (1 - local) * 2;
+    return shape * step * WAVE_RISE;
+  }
+  return 0;
 }
 
 function landingSquash(view, postIndex, slot) {
-  if (!view.landing || view.landing.post !== postIndex) return 1;
-  if (slot < view.landing.fromSlot) return 1;
-  return view.landing.squash;
+  for (let i = 0; i < view.landings.length; i += 1) {
+    const landing = view.landings[i];
+    if (landing.post === postIndex && slot >= landing.fromSlot) return landing.squash;
+  }
+  return 1;
+}
+
+// Вспышка-кольцо от основания собранной стопки наружу.
+function drawBurst(ctx, view) {
+  for (let i = 0; i < view.bursts.length; i += 1) drawBurstRing(ctx, view, view.bursts[i]);
+}
+
+function drawBurstRing(ctx, view, burst) {
+  const post = view.layout.posts[burst.post];
+  if (!post) return;
+  const width = view.layout.cubeWidth * post.scale;
+  const t = burst.t;
+  const radius = width * (BURST_FROM + (BURST_TO - BURST_FROM) * t);
+  ctx.save();
+  ctx.globalAlpha = BURST_ALPHA * (1 - t);
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = BURST_WIDTH;
+  ctx.beginPath();
+  ctx.ellipse(post.x, post.baseY, radius, radius / 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Награда летит со стопки в город: связь поля и города должна быть видна,
+// а не подразумеваться. Наград может лететь несколько сразу.
+function drawFlyingReward(ctx, view) {
+  for (let i = 0; i < view.rewards.length; i += 1) {
+    const reward = view.rewards[i];
+    if (reward.flying) drawRewardAt(ctx, view.city, reward.pending, reward.x, reward.y, reward.unit, reward.angle);
+  }
 }
 
 // Подсказка: кольцо у подставки плюс стрелка над штырём. Одного кольца
@@ -148,10 +260,14 @@ function drawHand(ctx, view) {
   // так видно, что группа в воздухе.
   drawShadow(ctx, post.x, post.baseY, baseSlot * layout.step * post.scale, size * 2, HAND_SHADOW_FADE);
   let topY = 0;
+  // При отказе по цвету группа в руке вспыхивает вместе с кубиком цели:
+  // видно, какие именно два цвета сравниваются.
+  const flash = view.deny && view.deny.kind === 'color' ? view.deny.flash : 0;
+  const lit = flash > 0 ? flashOutline(hand.color, flash) : null;
   for (let i = 0; i < hand.count; i += 1) {
     const pos = slotPosition(layout, hand.from, baseSlot + i);
     topY = pos.y - lift;
-    drawCube(ctx, post.x + hand.bob, topY, size, hand.color, 1);
+    drawCube(ctx, post.x + hand.bob, topY, size, hand.color, 1, lit);
   }
   drawStuds(ctx, post.x + hand.bob, topY, size, hand.color);
 }

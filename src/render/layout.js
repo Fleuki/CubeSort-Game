@@ -8,7 +8,9 @@ const CITY_SHARE = 0.32;
 const AIR_SHARE = 0.06;
 const FIELD_SHARE = 0.62;
 
-const HUD_TOP = 56;
+// Верхняя полоса HUD выросла со строкой ходов — зона города начинается
+// под ней целиком, иначе дальние дома лезут под номер уровня.
+const HUD_TOP = 64;
 const HUD_BOTTOM = 78;
 const SIDE_MARGIN = 12;
 const MIN_SIDE_MARGIN = 4;

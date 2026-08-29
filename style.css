@@ -152,20 +152,6 @@ html, body {
   white-space: nowrap;
 }
 
-.level-goal.pulse {
-  animation: goal-pulse 620ms ease-out;
-}
-
-@keyframes goal-pulse {
-  0% { opacity: 0.55; transform: scale(1); }
-  30% { opacity: 1; transform: scale(1.08); }
-  100% { opacity: 0.55; transform: scale(1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .level-goal.pulse { animation-duration: 240ms; }
-}
-
 .tool {
   pointer-events: auto;
   position: relative;
@@ -257,7 +243,7 @@ html, body {
 }
 
 .menu-note {
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   font-size: 14px;
   line-height: 1.45;
   opacity: 0.72;
@@ -279,6 +265,65 @@ html, body {
 
 .primary:active { transform: translateY(3px); box-shadow: none; }
 
+/* Карточки режимов: три спокойных плитки, ни одна не спорит с соседней. */
+.modes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mode-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-areas: 'city' 'title' 'progress';
+  align-items: center;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 10px 12px 12px;
+  border: none;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 3px 0 rgba(154, 123, 82, 0.28);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mode-card:active { transform: translateY(2px); box-shadow: none; }
+
+.mode-city {
+  grid-area: city;
+  width: 100%;
+  height: 72px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: rgba(223, 208, 180, 0.5);
+}
+
+.mode-title {
+  grid-area: title;
+  font-family: 'Unbounded', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+/* Медаль — кружок в цвет металла рядом с названием режима. */
+.mode-medal {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.mode-progress {
+  grid-area: progress;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
 .menu-row {
   display: flex;
   align-items: center;
@@ -287,6 +332,8 @@ html, body {
   font-size: 13px;
   opacity: 0.75;
 }
+
+.menu-row-end { justify-content: flex-end; }
 
 .link {
   border: none;
@@ -304,8 +351,6 @@ html, body {
   margin-bottom: 10px;
 }
 
-.stars { font-size: 34px; letter-spacing: 6px; color: #E2A238; margin-bottom: 8px; }
-.stars span.off { color: rgba(46, 42, 36, 0.18); }
 
 .win-stats { font-size: 14px; opacity: 0.7; }
 .win-city { font-size: 13px; opacity: 0.62; margin: 6px 0 18px; }
@@ -346,5 +391,7 @@ html, body {
 
 @media (max-height: 620px) {
   .menu-card { padding: 18px 16px; }
+  .mode-city { height: 60px; }
+  .mode-title { font-size: 15px; }
   .tool { font-size: 10px; padding: 6px 4px 5px; }
 }

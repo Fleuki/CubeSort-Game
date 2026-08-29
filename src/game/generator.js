@@ -10,6 +10,7 @@
 
 import { createSolvedPosts, normalizeKey } from './state.js';
 import { isSolved } from './rules.js';
+import { levelConfig, modeConfig } from './modes.js';
 
 const SHUFFLE_BASE = 30;
 const SHUFFLE_PER_LEVEL = 4;
@@ -18,20 +19,14 @@ const GREEDY_SHARE = 0.5;
 const CANDIDATES = 12;
 const TUTORIAL_LEVELS = 3;
 
-// Кривая сложности из раздела 3 дизайн-дока.
-export function levelConfig(id) {
-  if (id <= 3) return { colors: 3, capacity: 3, posts: 5 };
-  if (id <= 10) return { colors: id <= 6 ? 3 : 4, capacity: 4, posts: 6 };
-  if (id <= 20) return { colors: 5, capacity: 4, posts: 7 };
-  if (id <= 35) return { colors: 6, capacity: 4, posts: 8 };
-  if (id <= 50) return { colors: id <= 43 ? 6 : 7, capacity: 5, posts: 8 };
-  return { colors: 7, capacity: 5, posts: 9 };
-}
-
-export function shuffleCount(id) {
+// Кривая сложности берётся из таблицы режима, здесь её нет.
+export function shuffleCount(mode, id) {
+  const config = modeConfig(mode);
   // Первые уровни — обучение без текста: решаются за два-три хода.
-  if (id <= TUTORIAL_LEVELS) return id + 1;
-  return Math.min(SHUFFLE_BASE + SHUFFLE_PER_LEVEL * id, SHUFFLE_CAP);
+  // В сложном режиме обучения нет.
+  if (config.tutorial && id <= TUTORIAL_LEVELS) return id + 1;
+  const base = Math.min(SHUFFLE_BASE + SHUFFLE_PER_LEVEL * id, SHUFFLE_CAP);
+  return Math.max(2, Math.round(base * config.shuffleFactor));
 }
 
 // Детерминированный ГПСЧ (xorshift32): по seed уровень воспроизводится
@@ -136,9 +131,9 @@ function randomWalk(config, steps, random) {
   return { posts, solution, score: mixedness(posts) };
 }
 
-export function generateLevel(id, seed) {
-  const config = levelConfig(id);
-  const steps = shuffleCount(id);
+export function generateLevel(mode, id, seed) {
+  const config = levelConfig(mode, id);
+  const steps = shuffleCount(mode, id);
   let best = null;
   for (let candidate = 0; candidate < CANDIDATES; candidate += 1) {
     const random = makeRandom(seed + candidate * 2654435761);
@@ -149,6 +144,7 @@ export function generateLevel(id, seed) {
   if (!best) return null;
   return {
     id,
+    mode,
     seed,
     capacity: config.capacity,
     colors: config.colors,

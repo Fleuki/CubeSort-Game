@@ -13,15 +13,18 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Порядок важен: модуль должен идти после всех, кого импортирует.
 const MODULES = [
-  'levels/levels.js',
+  'levels/levels-easy.js',
+  'levels/levels-normal.js',
+  'levels/levels-hard.js',
+  'src/game/modes.js',
   'src/game/state.js',
   'src/game/rules.js',
   'src/game/solver.js',
   'src/game/generator.js',
   'src/game/history.js',
   'src/render/shadow.js',
-  'src/render/scale.js',
   'src/render/iso.js',
+  'src/render/scale.js',
   'src/render/layout.js',
   'src/render/city.js',
   'src/anim/tween.js',

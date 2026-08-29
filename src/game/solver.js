@@ -1,26 +1,34 @@
 // Поиск решения. В рантайме вызывается ТОЛЬКО по кнопке подсказки:
-// BFS с потолком по глубине. Полный поиск (solve) — для офлайн-проверки
-// уровней в tools/gen-levels.js.
+// BFS по нормализованным состояниям, затем — добор в глубину в пределах
+// бюджета времени. Подсказка выдаётся только тогда, когда решение целиком
+// найдено, поэтому ход в тупик невозможен. Полный поиск (solve) —
+// для офлайн-проверки уровней в tools/gen-levels.js.
 
 import { normalizeKey } from './state.js';
 import { applyMove, listMoves, isSolved, takeTopGroup, freeSlots } from './rules.js';
 
-const HINT_MAX_DEPTH = 12;
-const HINT_MAX_NODES = 20000;
+const HINT_BUDGET_MS = 250;
+const HINT_BFS_DEPTH = 18;
+const HINT_BFS_NODES = 120000;
+const HINT_DFS_NODES = 300000;
+const TIME_CHECK_MASK = 511;
 const SOLVE_MAX_NODES = 400000;
 const SOLVE_MAX_DEPTH = 220;
 const OPTIMAL_MAX_DEPTH = 20;
 const OPTIMAL_MAX_NODES = 400000;
 
-// Подсказка: кратчайший путь до победы в пределах глубины.
-// Если не нашли — любой ход, сливающий две группы одного цвета.
-export function findHint(posts, capacity, maxDepth = HINT_MAX_DEPTH) {
-  const start = normalizeKey(posts);
-  const seen = new Set([start]);
+// Подсказка: сначала BFS по нормализованным состояниям — он даёт кратчайший
+// путь и заодно доказывает нерешаемость, если пространство обошли целиком.
+// Если BFS упёрся в потолок — добираем в глубину остатком бюджета.
+// Возвращаем ход, только когда решение найдено полностью; иначе null.
+export function findHint(posts, capacity, budgetMs = HINT_BUDGET_MS) {
+  const deadline = Date.now() + budgetMs;
+  const seen = new Set([normalizeKey(posts)]);
   let frontier = [{ posts, first: null }];
   let nodes = 0;
+  let truncated = false;
 
-  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth += 1) {
+  for (let depth = 0; depth < HINT_BFS_DEPTH && frontier.length > 0; depth += 1) {
     const next = [];
     for (let i = 0; i < frontier.length; i += 1) {
       const node = frontier[i];
@@ -31,30 +39,29 @@ export function findHint(posts, capacity, maxDepth = HINT_MAX_DEPTH) {
         const first = node.first || move;
         if (isSolved(child, capacity)) return first;
         nodes += 1;
-        if (nodes > HINT_MAX_NODES) return fallbackHint(posts, capacity);
+        if (nodes > HINT_BFS_NODES || ((nodes & TIME_CHECK_MASK) === 0 && Date.now() >= deadline)) {
+          truncated = true;
+          break;
+        }
         const key = normalizeKey(child);
         if (seen.has(key)) continue;
         seen.add(key);
         next.push({ posts: child, first });
       }
+      if (truncated) break;
     }
+    if (truncated) break;
+    if (depth === HINT_BFS_DEPTH - 1 && next.length > 0) truncated = true;
     frontier = next;
   }
-  return fallbackHint(posts, capacity);
-}
 
-function fallbackHint(posts, capacity) {
-  const moves = listMoves(posts, capacity);
-  let best = null;
-  let bestScore = -Infinity;
-  for (let i = 0; i < moves.length; i += 1) {
-    const score = moveScore(posts, moves[i], capacity);
-    if (score > bestScore) {
-      bestScore = score;
-      best = moves[i];
-    }
-  }
-  return best;
+  // Пространство обошли целиком и победы в нём нет — позиция мертва,
+  // добирать в глубину нечего.
+  if (!truncated) return null;
+
+  if (Date.now() >= deadline) return null;
+  const path = solve(posts, capacity, HINT_DFS_NODES, deadline);
+  return path && path.length > 0 ? path[0] : null;
 }
 
 // Чем выше — тем «полезнее» ход: слияние с тем же цветом лучше переезда
@@ -75,14 +82,15 @@ function moveScore(posts, move, capacity) {
 
 // Полный поиск в глубину с отсечением по посещённым состояниям.
 // Возвращает массив ходов или null.
-export function solve(posts, capacity, maxNodes = SOLVE_MAX_NODES) {
+export function solve(posts, capacity, maxNodes = SOLVE_MAX_NODES, deadline = Infinity) {
   const seen = new Set();
   const path = [];
   let nodes = 0;
+  let expired = false;
 
   function dfs(current, depth) {
     if (isSolved(current, capacity)) return true;
-    if (depth >= SOLVE_MAX_DEPTH || nodes > maxNodes) return false;
+    if (depth >= SOLVE_MAX_DEPTH || nodes > maxNodes || expired) return false;
     const key = normalizeKey(current);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -91,6 +99,10 @@ export function solve(posts, capacity, maxNodes = SOLVE_MAX_NODES) {
     for (let i = 0; i < moves.length; i += 1) {
       nodes += 1;
       if (nodes > maxNodes) return false;
+      if ((nodes & TIME_CHECK_MASK) === 0 && Date.now() >= deadline) {
+        expired = true;
+        return false;
+      }
       path.push(moves[i]);
       if (dfs(applyMove(current, moves[i].from, moves[i].to, capacity), depth + 1)) return true;
       path.pop();
