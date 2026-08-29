@@ -40,6 +40,10 @@
   --ink: #2E2A24;
   --shadow: rgba(92, 70, 44, 0.20);
   --card: #FBF6EC;
+  /* Геометрия портретной рамки: на телефоне — во всю ширину, на десктопе
+     JS сужает и центрирует. */
+  --stage-w: 100%;
+  --stage-left: 0px;
 }
 
 * {
@@ -69,9 +73,8 @@ html, body {
 
 #scene {
   position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  left: 0;
   display: block;
   touch-action: none;
 }
@@ -80,7 +83,11 @@ html, body {
 
 .hud {
   position: fixed;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  /* Привязка к портретной рамке: кнопки идут по краям поля, а не окна. */
+  left: var(--stage-left);
+  width: var(--stage-w);
   pointer-events: none;
   display: flex;
   flex-direction: column;
