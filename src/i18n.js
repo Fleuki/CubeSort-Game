@@ -8,9 +8,9 @@ export const LANGS = ['ru', 'en'];
 export const FALLBACK_LANG = 'en';
 const DEFAULT_LANG = 'ru';
 
-// Название не переводится, а транслитерируется: русская локаль и материалы
-// Яндекс.Игр — строго «Кубоград», международные площадки — «Kubograd».
-// Синонимы-переводы запрещены, подробности в GAME_NAME.md.
+// У названия по одному написанию на локаль: русская локаль и материалы
+// Яндекс.Игр — «Кубоград», международные площадки — «Cubetown».
+// Других вариантов нет ни в одной локали, подробности в GAME_NAME.md.
 
 export const DICT = {
   ru: {
@@ -55,7 +55,7 @@ export const DICT = {
     'toast.rewardFailed': 'Награда не получена'
   },
   en: {
-    'app.title': 'Kubograd',
+    'app.title': 'Cubetown',
 
     'hud.menu': 'Menu',
     'hud.settings': 'Settings',
