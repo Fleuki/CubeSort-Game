@@ -2,21 +2,29 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<title>Кубоград — иконка и обложка</title>
+<title>Cubetown / Кубоград — иконка и обложки</title>
 <style>
-  /* Шрифты игры — локальные woff2 из репозитория, чтобы «Кубоград»
-     на обложке был тем же начертанием, что и в самой игре. */
+  /* Шрифты игры — локальные woff2 из репозитория. Латиница нужна обязательно:
+     на обложках Playgama название пишется «Cubetown». */
   @font-face {
-    font-family: 'Unbounded';
-    font-weight: 700;
+    font-family: 'Unbounded'; font-weight: 700; font-display: block;
     src: url('../assets/fonts/Unbounded-700-cyrillic.woff2') format('woff2');
-    font-display: block;
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
   }
   @font-face {
-    font-family: 'Onest';
-    font-weight: 400 700;
+    font-family: 'Unbounded'; font-weight: 700; font-display: block;
+    src: url('../assets/fonts/Unbounded-700-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+20AC, U+2122;
+  }
+  @font-face {
+    font-family: 'Onest'; font-weight: 400 700; font-display: block;
     src: url('../assets/fonts/Onest-cyrillic.woff2') format('woff2');
-    font-display: block;
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  }
+  @font-face {
+    font-family: 'Onest'; font-weight: 400 700; font-display: block;
+    src: url('../assets/fonts/Onest-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+20AC, U+2122;
   }
   :root { --ink: #2E2A24; --wood: #9A7B52; --bg: #F2EADA; --card: #FBF6EC; }
   body {
@@ -27,12 +35,12 @@
   h1 { font-family: 'Unbounded', sans-serif; font-size: 22px; }
   .panel {
     background: var(--card); border-radius: 18px; padding: 20px;
-    margin-bottom: 24px; max-width: 900px;
+    margin-bottom: 24px; max-width: 1000px;
     box-shadow: 0 6px 0 rgba(92,70,44,0.15);
   }
   h2 { font-family: 'Unbounded', sans-serif; font-size: 17px; margin: 0 0 12px; }
   label { display: inline-flex; align-items: center; gap: 6px; margin: 4px 14px 4px 0; font-size: 13px; }
-  input[type=range] { width: 160px; }
+  input[type=range] { width: 150px; }
   input[type=text] { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(46,42,36,0.2); }
   canvas { display: block; margin: 12px 0; max-width: 100%; height: auto; border: 1px solid rgba(46,42,36,0.15); border-radius: 8px; background: var(--bg); }
   button {
@@ -43,11 +51,78 @@
   button:active { transform: translateY(2px); box-shadow: none; }
   .hint { font-size: 12px; opacity: 0.65; line-height: 1.5; }
   .row { margin: 8px 0; }
+  .warn {
+    background: rgba(212, 85, 63, 0.1); border-radius: 12px;
+    padding: 12px 16px; font-size: 13px; line-height: 1.5; margin-bottom: 20px;
+    max-width: 1000px;
+  }
+  .previews { display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; }
+  .previews figure { margin: 0; }
+  .previews figcaption { font-size: 11px; opacity: 0.6; text-align: center; margin-top: 4px; }
+  .previews canvas { margin: 0; }
 </style>
 </head>
 <body>
-<h1>Кубоград — финиш иконки и обложки</h1>
-<p class="hint">Открывается двойным кликом, всё локально. Выбери картинку от нейросети — страница подгонит размер и (для обложки) впишет «Кубоград» шрифтом игры. Кнопка сохраняет PNG ровно нужного размера.</p>
+<h1>Обложки и иконка</h1>
+
+<div class="warn">
+  <b>Страницу нужно открывать через локальный сервер</b>, а не двойным кликом:
+  обложки рисуются настоящим рендерером игры, а он подключается ES-модулями,
+  которые браузер по <code>file://</code> не грузит.<br>
+  <code>python3 -m http.server</code> в корне репозитория →
+  <code>http://localhost:8000/tools/store-assets.html</code>
+</div>
+
+<div class="panel">
+  <h2>Обложки Playgama — рисуются рендерером игры</h2>
+  <p class="hint">
+    Кубики, штыри, тени и город берутся из <code>src/render/</code> — то же самое,
+    что видит игрок, поэтому стиль совпадает буквально. Ни кнопок, ни интерфейса,
+    ни мелкого текста на обложках нет: только геймплей и название.
+  </p>
+  <div class="row">
+    <label>Название: <input type="text" id="cover-title" value="Cubetown"></label>
+    <label>Город <input type="range" id="cover-seed" min="0" max="40" value="14"></label>
+    <label>Материал:
+      <select id="cover-material">
+        <option value="wood">дерево</option>
+        <option value="stone" selected>камень</option>
+        <option value="glass">стекло</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="row">
+    <b>Square 800×800</b><br>
+    <canvas id="sq-canvas" width="800" height="800" style="width:320px"></canvas>
+    <button id="sq-save">Скачать 800×800</button>
+  </div>
+
+  <div class="row">
+    <b>Portrait 1080×1920</b><br>
+    <canvas id="pt-canvas" width="1080" height="1920" style="width:250px"></canvas>
+    <button id="pt-save">Скачать 1080×1920</button>
+  </div>
+
+  <div class="row">
+    <b>Landscape 1920×1080</b><br>
+    <canvas id="ls-canvas" width="1920" height="1080" style="width:640px"></canvas>
+    <button id="ls-save">Скачать 1920×1080</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Проверка читаемости в каталоге — 200 px</h2>
+  <p class="hint">
+    Именно в таком размере обложку видит игрок в списке игр. Если название здесь
+    не читается — оно не читается нигде.
+  </p>
+  <div class="previews">
+    <figure><canvas id="sq-mini" width="200" height="200"></canvas><figcaption>800×800 → 200</figcaption></figure>
+    <figure><canvas id="pt-mini" width="113" height="200"></canvas><figcaption>1080×1920 → 200</figcaption></figure>
+    <figure><canvas id="ls-mini" width="200" height="113"></canvas><figcaption>1920×1080 → 200</figcaption></figure>
+  </div>
+</div>
 
 <div class="panel">
   <h2>Иконка — 512×512 PNG</h2>
@@ -57,15 +132,16 @@
     <label><input type="checkbox" id="icon-text"> подпись «Кубоград» внизу</label>
   </div>
   <button id="icon-save">Скачать иконку 512×512</button>
-  <p class="hint">Иконку обычно оставляют без текста — она читается крупным символом. Подпись включай, только если хочется.</p>
+  <p class="hint">Иконку обычно оставляют без текста — она читается крупным символом.</p>
 </div>
 
 <div class="panel">
-  <h2>Обложка — 800×470 PNG</h2>
+  <h2>Обложка Яндекс.Игр — 800×470 PNG</h2>
+  <p class="hint">Формат Яндекса, название здесь остаётся русским: «Кубоград» (см. GAME_NAME.md).</p>
   <div class="row"><input type="file" id="cover-file" accept="image/*"></div>
   <canvas id="cover-canvas" width="800" height="470" style="width:600px"></canvas>
   <div class="row">
-    <label>Текст: <input type="text" id="cover-title" value="Кубоград"></label>
+    <label>Текст: <input type="text" id="ya-title" value="Кубоград"></label>
     <label><input type="checkbox" id="cover-sub" checked> подзаголовок</label>
   </div>
   <div class="row">
@@ -74,18 +150,219 @@
     <label>По Y <input type="range" id="cover-y" min="120" max="360" value="210"></label>
   </div>
   <button id="cover-save">Скачать обложку 800×470</button>
-  <p class="hint">Двигай ползунки, чтобы «Кубоград» лёг в пустое поле слева и не залезал на кубики. Подзаголовок — «головоломка-сортировка».</p>
 </div>
 
-<script>
-const SUB = 'головоломка-сортировка';
-const INK = '#2E2A24';
+<script type="module">
+import { computeLayout } from '../src/render/layout.js';
+import { drawScene } from '../src/render/scene.js';
+import { createCity, rebuildCity } from '../src/render/city.js';
+import { createFx } from '../src/anim/fx.js';
+import { SKY_TOP, INK } from '../src/render/iso.js';
 
-// Вписать изображение в прямоугольник по принципу cover (без искажения).
-function drawCover(ctx, img, w, h) {
+const SUB = 'головоломка-сортировка';
+
+// --- сцена игры как источник картинки ------------------------------------
+
+// Расстановка выбрана так, чтобы кадр читался как головоломка: два собранных
+// столбика с крышками, остальные разной высоты и цвета.
+const CAPACITY = 5;
+// Семь столбиков раскладка игры ставит в два ряда — это плотный кадр
+// для вертикальных форматов.
+const POSTS_TALL = [
+  [0, 0, 0, 0, 0],
+  [3, 1, 1],
+  [2, 2, 2, 2, 2],
+  [4, 6, 3],
+  [1, 5, 5, 4],
+  [6],
+  []
+];
+// До пяти столбиков раскладка ставит в один ряд: для 16:9 это и нужно —
+// кубики крупнее, вертикального воздуха меньше.
+const POSTS_WIDE = [
+  [0, 0, 0, 0, 0],
+  [3, 1, 1],
+  [2, 2, 2, 2, 2],
+  [1, 5, 5, 4],
+  [6]
+];
+
+function scenePosts(source) {
+  return source.map((post) => post.slice());
+}
+
+// Кадр игры нужного размера. Зум идёт через dpr, а не растягиванием готовой
+// картинки: рендерер умножает координаты на dpr сам, поэтому кубики остаются
+// векторно чёткими на любом увеличении.
+function renderScene(layoutW, layoutH, zoom, seed, material, source) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(layoutW * zoom);
+  canvas.height = Math.round(layoutH * zoom);
+  const ctx = canvas.getContext('2d');
+  const posts = scenePosts(source || POSTS_TALL);
+  const layout = computeLayout(layoutW, layoutH, posts.length, CAPACITY);
+  const city = createCity([], [], material);
+  // Ползунок «Город» — это число пройденных уровней: чем больше, тем плотнее
+  // застройка. Столбиков берём вчетверо больше, как в реальной игре.
+  rebuildCity(city, 6 + seed, (6 + seed) * 4);
+  const completed = posts.map((post) =>
+    post.length === CAPACITY && post.every((color) => color === post[0]));
+  drawScene(ctx, {
+    layout, dpr: zoom, posts, capacity: CAPACITY, completed,
+    caps: [], bursts: [], rewards: [], ripples: [], drops: [],
+    city, hand: null, flight: null, hidden: null,
+    landings: [], waves: [], shake: null, deny: null,
+    hint: null, hintPulse: 0, fx: createFx(), fade: 0
+  });
+  return canvas;
+}
+
+// Вписать кадр в прямоугольник по принципу cover, с якорем и добавочным
+// увеличением. ax/ay — 0 прижимает к левому/верхнему краю, 1 к правому/нижнему.
+function placeScene(ctx, scene, x, y, w, h, scale, ax, ay) {
+  const base = Math.max(w / scene.width, h / scene.height) * scale;
+  const dw = scene.width * base;
+  const dh = scene.height * base;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.drawImage(scene, x + (w - dw) * ax, y + (h - dh) * ay, dw, dh);
+  ctx.restore();
+}
+
+// --- название ------------------------------------------------------------
+
+// Кегль подбирается по фактической ширине строки: «Cubetown» и «Кубоград»
+// разной длины, и жёстко заданный размер одному из них не подойдёт.
+function fitFont(ctx, text, startSize, maxWidth) {
+  let size = startSize;
+  ctx.font = `700 ${size}px Unbounded`;
+  while (size > 12 && ctx.measureText(text).width > maxWidth) {
+    size -= 2;
+    ctx.font = `700 ${size}px Unbounded`;
+  }
+  return size;
+}
+
+// Светлая обводка под названием: на превью в 200 px тёмные буквы иначе
+// сливаются с крышами города.
+function drawTitle(ctx, text, cx, baseline, startSize, maxWidth) {
+  const size = fitFont(ctx, text, startSize, maxWidth);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = SKY_TOP;
+  ctx.lineWidth = size * 0.22;
+  ctx.strokeText(text, cx, baseline);
+  ctx.fillStyle = INK;
+  ctx.fillText(text, cx, baseline);
+  return size;
+}
+
+// --- обложки -------------------------------------------------------------
+
+// Верх игровой сцены — ровная заливка цветом неба, поэтому полосу под
+// название можно продолжить тем же цветом: стыка не видно.
+function skyBand(ctx, w, h) {
+  ctx.fillStyle = SKY_TOP;
+  ctx.fillRect(0, 0, w, h);
+}
+
+const covers = {
+  // 1:1 — плотный кадр: город и столбики придвинуты друг к другу, пустой
+  // земли внизу не остаётся.
+  square: {
+    canvas: document.getElementById('sq-canvas'),
+    mini: document.getElementById('sq-mini'),
+    file: 'cubetown-cover-800x800.png',
+    draw(ctx, w, h, title, seed, material) {
+      const band = h * 0.20;
+      const scene = renderScene(760, 1020, 1.4, seed, material, POSTS_TALL);
+      skyBand(ctx, w, band);
+      placeScene(ctx, scene, 0, band, w, h - band, 1.12, 0.5, 0.30);
+      drawTitle(ctx, title, w / 2, band * 0.78, 128, w * 0.86);
+    }
+  },
+  // 9:16 — вертикаль: название сверху, под ним город, ниже поле со столбиками.
+  portrait: {
+    canvas: document.getElementById('pt-canvas'),
+    mini: document.getElementById('pt-mini'),
+    file: 'cubetown-cover-1080x1920.png',
+    draw(ctx, w, h, title, seed, material) {
+      const band = h * 0.155;
+      const scene = renderScene(1080, 1620, 1, seed, material, POSTS_TALL);
+      skyBand(ctx, w, band);
+      placeScene(ctx, scene, 0, band, w, h - band, 1.04, 0.5, 0.5);
+      drawTitle(ctx, title, w / 2, band * 0.74, 190, w * 0.88);
+    }
+  },
+  // 16:9 — город идёт шире, кадр сдвинут вправо, слева остаётся воздух
+  // под название.
+  landscape: {
+    canvas: document.getElementById('ls-canvas'),
+    mini: document.getElementById('ls-mini'),
+    file: 'cubetown-cover-1920x1080.png',
+    draw(ctx, w, h, title, seed, material) {
+      // Поле под название занимает почти половину кадра не ради красоты:
+      // в каталоге обложка 16:9 показывается шириной 200 px, и на узкой полосе
+      // название превращалось в нечитаемую строчку.
+      const band = w * 0.42;
+      const viewW = w - band;
+      // Кадр строится ровно под свободную часть холста: раскладка игры сама
+      // разложит пять столбиков в один ряд и растянет город по ширине,
+      // поэтому ничего обрезать не приходится.
+      const layoutW = 1200;
+      const scene = renderScene(layoutW, Math.round(layoutW * h / viewW), 1.2, seed, material, POSTS_WIDE);
+      const dh = h;
+      const dy = 0;
+      // Боковое поле под название — это тот же фон сцены: фон рисуется
+      // вертикальным градиентом, поэтому крайний столбец пикселей можно
+      // растянуть влево, и стыка не будет.
+      ctx.drawImage(scene, 0, 0, 1, scene.height, 0, dy, band + 1, dh);
+      ctx.drawImage(scene, band, dy, viewW, dh);
+      drawTitle(ctx, title, band * 0.5, h * 0.55, 220, band * 0.88);
+    }
+  }
+};
+
+function renderCovers() {
+  const title = document.getElementById('cover-title').value || 'Cubetown';
+  const seed = +document.getElementById('cover-seed').value;
+  const material = document.getElementById('cover-material').value;
+  Object.keys(covers).forEach((key) => {
+    const cover = covers[key];
+    const ctx = cover.canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cover.canvas.width, cover.canvas.height);
+    cover.draw(ctx, cover.canvas.width, cover.canvas.height, title, seed, material);
+    const mini = cover.mini.getContext('2d');
+    mini.clearRect(0, 0, cover.mini.width, cover.mini.height);
+    mini.drawImage(cover.canvas, 0, 0, cover.mini.width, cover.mini.height);
+  });
+}
+
+function download(canvas, name) {
+  canvas.toBlob((blob) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+  }, 'image/png');
+}
+
+document.getElementById('sq-save').addEventListener('click', () => download(covers.square.canvas, covers.square.file));
+document.getElementById('pt-save').addEventListener('click', () => download(covers.portrait.canvas, covers.portrait.file));
+document.getElementById('ls-save').addEventListener('click', () => download(covers.landscape.canvas, covers.landscape.file));
+['cover-title', 'cover-seed', 'cover-material'].forEach((id) =>
+  document.getElementById(id).addEventListener('input', renderCovers));
+
+// --- иконка и обложка Яндекса: как были, картинка от нейросети ------------
+
+function drawImageCover(ctx, img, w, h) {
   const scale = Math.max(w / img.width, h / img.height);
   const dw = img.width * scale, dh = img.height * scale;
-  ctx.fillStyle = '#F2EADA';
+  ctx.fillStyle = SKY_TOP;
   ctx.fillRect(0, 0, w, h);
   ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
@@ -98,23 +375,13 @@ function loadFile(input, cb) {
   img.src = URL.createObjectURL(file);
 }
 
-function download(canvas, name) {
-  canvas.toBlob((blob) => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-  }, 'image/png');
-}
-
-// --- иконка ---
 const iconCanvas = document.getElementById('icon-canvas');
 const ictx = iconCanvas.getContext('2d');
 let iconImg = null;
 function renderIcon() {
   ictx.clearRect(0, 0, 512, 512);
-  if (iconImg) drawCover(ictx, iconImg, 512, 512);
-  else { ictx.fillStyle = '#F2EADA'; ictx.fillRect(0, 0, 512, 512); }
+  if (iconImg) drawImageCover(ictx, iconImg, 512, 512);
+  else { ictx.fillStyle = SKY_TOP; ictx.fillRect(0, 0, 512, 512); }
   if (document.getElementById('icon-text').checked) {
     ictx.font = '700 64px Unbounded';
     ictx.textAlign = 'center';
@@ -127,41 +394,51 @@ document.getElementById('icon-file').addEventListener('change', (e) =>
 document.getElementById('icon-text').addEventListener('change', renderIcon);
 document.getElementById('icon-save').addEventListener('click', () => download(iconCanvas, 'kubograd-icon-512.png'));
 
-// --- обложка ---
-const coverCanvas = document.getElementById('cover-canvas');
-const cctx = coverCanvas.getContext('2d');
-let coverImg = null;
-function renderCover() {
-  cctx.clearRect(0, 0, 800, 470);
-  if (coverImg) drawCover(cctx, coverImg, 800, 470);
-  else { cctx.fillStyle = '#F2EADA'; cctx.fillRect(0, 0, 800, 470); }
-  const title = document.getElementById('cover-title').value || 'Кубоград';
+const yaCanvas = document.getElementById('cover-canvas');
+const yctx = yaCanvas.getContext('2d');
+let yaImg = null;
+function renderYandexCover() {
+  yctx.clearRect(0, 0, 800, 470);
+  if (yaImg) drawImageCover(yctx, yaImg, 800, 470);
+  else { yctx.fillStyle = SKY_TOP; yctx.fillRect(0, 0, 800, 470); }
+  const title = document.getElementById('ya-title').value || 'Кубоград';
   const size = +document.getElementById('cover-size').value;
   const x = +document.getElementById('cover-x').value;
   const y = +document.getElementById('cover-y').value;
-  cctx.textAlign = 'left';
-  cctx.fillStyle = INK;
-  cctx.font = `700 ${size}px Unbounded`;
-  cctx.fillText(title, x, y);
+  yctx.textAlign = 'left';
+  yctx.fillStyle = INK;
+  yctx.font = `700 ${size}px Unbounded`;
+  yctx.fillText(title, x, y);
   if (document.getElementById('cover-sub').checked) {
-    cctx.font = '500 22px Onest';
-    cctx.globalAlpha = 0.72;
-    cctx.fillText(SUB, x + 3, y + 34);
-    cctx.globalAlpha = 1;
+    yctx.font = '500 22px Onest';
+    yctx.globalAlpha = 0.72;
+    yctx.fillText(SUB, x + 3, y + 34);
+    yctx.globalAlpha = 1;
   }
 }
-['cover-title', 'cover-sub', 'cover-size', 'cover-x', 'cover-y'].forEach((id) =>
-  document.getElementById(id).addEventListener('input', renderCover));
+['ya-title', 'cover-sub', 'cover-size', 'cover-x', 'cover-y'].forEach((id) =>
+  document.getElementById(id).addEventListener('input', renderYandexCover));
 document.getElementById('cover-file').addEventListener('change', (e) =>
-  loadFile(e.target, (img) => { coverImg = img; renderCover(); }));
-document.getElementById('cover-save').addEventListener('click', () => download(coverCanvas, 'kubograd-cover-800x470.png'));
+  loadFile(e.target, (img) => { yaImg = img; renderYandexCover(); }));
+document.getElementById('cover-save').addEventListener('click', () => download(yaCanvas, 'kubograd-cover-800x470.png'));
 
-// Ждём шрифты, чтобы первый кадр был уже правильным начертанием.
-if (document.fonts && document.fonts.ready) {
-  document.fonts.load('700 66px Unbounded').then(() => { renderIcon(); renderCover(); });
+function renderAll() {
+  renderCovers();
+  renderIcon();
+  renderYandexCover();
 }
-renderIcon();
-renderCover();
+
+// Ждём шрифт: без него первый кадр уйдёт системным начертанием, а подбор
+// кегля по measureText даст неверную ширину.
+if (document.fonts && document.fonts.load) {
+  Promise.all([
+    document.fonts.load('700 128px Unbounded', 'Cubetown'),
+    document.fonts.load('700 128px Unbounded', 'Кубоград')
+  ]).then(renderAll, renderAll);
+} else {
+  renderAll();
+}
+window.__renderAll = renderAll;
 </script>
 </body>
 </html>
