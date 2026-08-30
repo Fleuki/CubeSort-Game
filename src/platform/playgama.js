@@ -27,6 +27,10 @@ export function createPlaygamaAdapter() {
     return (bridge && bridge.EVENT_NAME) || {};
   }
 
+  function messages() {
+    return (bridge && bridge.PLATFORM_MESSAGE) || {};
+  }
+
   return {
     name: 'playgama',
     async init() {
@@ -51,14 +55,25 @@ export function createPlaygamaAdapter() {
     onAudioStateChanged(listener) {
       bridge.platform.on(events().AUDIO_STATE_CHANGED, (enabled) => listener(enabled !== false));
     },
+    // Пауза по требованию площадки: игрок открыл оверлей портала, свернул
+    // вкладку, ответил на звонок.
+    isPaused() {
+      return bridge.platform.isPaused === true;
+    },
+    onPauseStateChanged(listener) {
+      bridge.platform.on(events().PAUSE_STATE_CHANGED, (paused) => listener(paused === true));
+    },
     ready() {
-      bridge.platform.sendMessage('game_ready');
+      bridge.platform.sendMessage(messages().GAME_READY);
     },
-    gameplayStart() {
-      bridge.platform.sendMessage('level_started');
+    gameplayStart(info) {
+      bridge.platform.sendMessage(messages().LEVEL_STARTED, info);
     },
-    gameplayStop() {
-      bridge.platform.sendMessage('level_paused');
+    gameplayStop(info) {
+      bridge.platform.sendMessage(messages().LEVEL_PAUSED, info);
+    },
+    gameplayComplete(info) {
+      bridge.platform.sendMessage(messages().LEVEL_COMPLETED, info);
     },
     showAd() {
       const ads = bridge.advertisement;

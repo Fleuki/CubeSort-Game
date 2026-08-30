@@ -199,6 +199,8 @@ const screens = createScreens({
 
 // Звук выключен, если так решил игрок или так требует площадка.
 let platformAudio = true;
+// Первый кадр после паузы не должен нести накопленное время простоя.
+let skipDelta = false;
 function applyMute() {
   sfx.setMuted(app.settings.muted || !platformAudio);
 }
@@ -312,7 +314,7 @@ function startLevel(id) {
   rebuildLayout();
   updateHud();
   hud.setLevel(id);
-  platform.gameplayStart();
+  platform.gameplayStart(levelInfo());
 }
 
 function updateHud() {
@@ -323,6 +325,11 @@ function updateHud() {
     extraPostUsed: app.extraPostUsed,
     canUndo: canUndo(app.history)
   });
+}
+
+// Площадка принимает необязательные world и level: режим и номер уровня.
+function levelInfo() {
+  return { world: app.mode, level: String(app.level) };
 }
 
 function startGame(mode) {
@@ -341,8 +348,10 @@ function startGame(mode) {
 
 // Экран выбора режима: на каждой карточке настоящий город этого режима.
 function openMenu() {
+  // Пауза геймплея — только если он шёл: на загрузке и после победы
+  // отправлять её нечего, уровень уже закрыт своим сообщением.
+  if (app.screen === 'game') platform.gameplayStop(levelInfo());
   app.screen = 'menu';
-  platform.gameplayStop();
   hud.hide();
   const states = {};
   const rect = { x: 0, y: 0, width: THUMB_WIDTH, height: THUMB_HEIGHT };
@@ -785,7 +794,7 @@ function checkWin() {
   // Дом за пройденный уровень ещё летит — экран победы подождёт его.
   if (app.rewards.length > 0 || app.drops.length > 0) return;
   app.winning = true;
-  platform.gameplayStop();
+  platform.gameplayComplete(levelInfo());
   sfx.playWin();
   app.progress.level = Math.max(app.progress.level, app.level + 1);
   const medal = medalFor(app.mode, app.progress.level);
@@ -1030,7 +1039,8 @@ function readSlot(data, mode) {
 // --- цикл -----------------------------------------------------------------
 
 function frame(now) {
-  const dt = Math.min(MAX_DELTA, now - app.time || 0);
+  const dt = skipDelta ? 0 : Math.min(MAX_DELTA, now - app.time || 0);
+  skipDelta = false;
   app.time = now;
   if (!app.paused) {
     updateTweens(app.tweens, dt);
@@ -1127,22 +1137,37 @@ window.addEventListener('keydown', (event) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  setPaused(document.hidden);
+  setPauseReason('hidden', document.hidden);
 });
 // Потеря фокуса окна тоже паузит звук и цикл (§1.3): вкладка может остаться
 // видимой, но неактивной — visibilitychange тогда не срабатывает.
-window.addEventListener('blur', () => setPaused(true));
-window.addEventListener('focus', () => setPaused(false));
+window.addEventListener('blur', () => setPauseReason('blur', true));
+window.addEventListener('focus', () => setPauseReason('blur', false));
 
 window.addEventListener('message', (event) => {
-  if (event.data === 'game_api_pause') setPaused(true);
-  if (event.data === 'game_api_resume') setPaused(false);
+  if (event.data === 'game_api_pause') setPauseReason('host', true);
+  if (event.data === 'game_api_resume') setPauseReason('host', false);
 });
 
-function setPaused(paused) {
+// Паузу просят четверо: вкладка ушла в фон, окно потеряло фокус, площадка
+// прислала своё событие, хост — postMessage. Игра стоит, пока держится
+// хотя бы одна причина: иначе площадка сняла бы паузу у свёрнутой вкладки.
+const pauseReasons = { hidden: false, blur: false, platform: false, host: false };
+
+function setPauseReason(reason, active) {
+  pauseReasons[reason] = active;
+  const paused = Object.keys(pauseReasons).some((key) => pauseReasons[key]);
+  if (paused === app.paused) return;
   app.paused = paused;
-  if (paused) sfx.suspendAudio();
-  else sfx.resumeAudio();
+  if (paused) {
+    sfx.suspendAudio();
+  } else {
+    sfx.resumeAudio();
+    // Пока игра стояла, requestAnimationFrame мог не вызываться вовсе.
+    // Первый кадр после возобновления идёт с нулевой дельтой, иначе
+    // твины прыгнут вперёд на весь накопленный простой.
+    skipDelta = true;
+  }
 }
 
 // --- старт ----------------------------------------------------------------
@@ -1156,6 +1181,7 @@ async function boot() {
     platformAudio = enabled;
     applyMute();
   });
+  platform.onPauseState((paused) => setPauseReason('platform', paused));
   // Язык определяем до первого показа UI (§2.14): выбор игрока, затем язык
   // площадки, затем язык браузера.
   initLanguage(platform.language());

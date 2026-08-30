@@ -14,6 +14,7 @@ const INIT_TIMEOUT_MS = 5000;
 let adapter = createNoneAdapter();
 let lastInterstitial = 0;
 let audioListener = null;
+let pauseListener = null;
 
 // Яндекс проверяется первым: под него написан отдельный адаптер по
 // требованиям гайда, и мост его подменять не должен.
@@ -46,6 +47,7 @@ export async function initPlatform() {
     adapter = createNoneAdapter();
   }
   if (audioListener) bindAudio();
+  if (pauseListener) bindPause();
   return adapter.name;
 }
 
@@ -59,6 +61,18 @@ function bindAudio() {
 export function onAudioState(listener) {
   audioListener = listener;
   bindAudio();
+}
+
+// Площадка вправе поставить игру на паузу — например, когда игрок открыл
+// её оверлей поверх канваса.
+function bindPause() {
+  if (adapter.onPauseStateChanged) adapter.onPauseStateChanged(pauseListener);
+  pauseListener(adapter.isPaused ? adapter.isPaused() : false);
+}
+
+export function onPauseState(listener) {
+  pauseListener = listener;
+  bindPause();
 }
 
 export function platformName() {
@@ -75,12 +89,19 @@ export function ready() {
   adapter.ready();
 }
 
-export function gameplayStart() {
-  adapter.gameplayStart();
+export function gameplayStart(info) {
+  adapter.gameplayStart(info);
 }
 
-export function gameplayStop() {
-  adapter.gameplayStop();
+export function gameplayStop(info) {
+  adapter.gameplayStop(info);
+}
+
+// Уровень пройден — это отдельное сообщение, а не «геймплей остановлен».
+// Адаптеры без него (Яндекс, заглушка) просто закрывают геймплей.
+export function gameplayComplete(info) {
+  if (adapter.gameplayComplete) adapter.gameplayComplete(info);
+  else adapter.gameplayStop(info);
 }
 
 // Интерстишл не чаще раза в 3 минуты и не раньше третьего уровня.
