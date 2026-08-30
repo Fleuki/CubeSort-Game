@@ -208,7 +208,9 @@ html, body {
 .logo {
   font-family: 'Unbounded', sans-serif;
   font-weight: 700;
-  font-size: clamp(30px, 11vw, 46px);
+  /* Верх ограничен 44px, а не 46: на 46 английское «Cubetown» переставало
+     помещаться в контентную коробку карточки и съезжало вправо. */
+  font-size: clamp(30px, 11vw, 44px);
   letter-spacing: 0.01em;
   margin-bottom: 14px;
 }
