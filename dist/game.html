@@ -411,89 +411,336 @@ html, body {
   .tool { font-size: 10px; padding: 6px 4px 5px; }
 }
 
+/* Переключатель языка живёт в строке настроек: сама строка не кнопка,
+   кликаются только RU и EN. */
+.toggle-static { cursor: default; }
+
+.lang-switch { display: flex; gap: 6px; }
+
+.lang-option {
+  min-width: 40px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(154, 123, 82, 0.18);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.lang-option.active {
+  background: var(--wood);
+  color: #FBF6EC;
+  opacity: 1;
+}
+
+/* Логотип на загрузке ждёт определения языка: мост асинхронный, и без этого
+   «Кубоград» успевал мигнуть перед «Kubograd». */
+#screen-loading .logo { opacity: 0; }
+html.lang-ready #screen-loading .logo { opacity: 1; transition: opacity 0.15s ease; }
+
 </style>
+<!-- SDK площадки — единственный внешний запрос, разрешённый правилом 7.
+     Не async и не defer: window.bridge должен существовать к запуску модуля.
+     Если скрипт не загрузился, detectAdapter() уходит на заглушку. -->
+<script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>
 </head>
 <body>
 <canvas id="scene"></canvas>
 
 <div id="hud" class="hud hidden">
   <div class="hud-top">
-    <button class="icon-button" id="btn-menu" type="button" aria-label="Меню">‹</button>
+    <button class="icon-button" id="btn-menu" type="button" data-i18n-aria="hud.menu" aria-label="Меню">‹</button>
     <div class="level-badge">
-      <span class="level-caption">Уровень</span>
+      <span class="level-caption" data-i18n="hud.level">Уровень</span>
       <span id="level-number">1</span>
       <span class="level-goal" id="level-goal"></span>
     </div>
-    <button class="icon-button" id="btn-settings" type="button" aria-label="Настройки">⚙</button>
+    <button class="icon-button" id="btn-settings" type="button" data-i18n-aria="hud.settings" aria-label="Настройки">⚙</button>
   </div>
   <div class="hud-bottom">
     <button class="tool" id="btn-undo" type="button">
-      <span class="tool-icon">↺</span><span class="tool-label">Отменить</span><span class="tool-badge" id="undo-badge">3</span>
+      <span class="tool-icon">↺</span><span class="tool-label" data-i18n="hud.undo">Отменить</span><span class="tool-badge" id="undo-badge">3</span>
     </button>
     <button class="tool" id="btn-hint" type="button">
-      <span class="tool-icon">?</span><span class="tool-label">Подсказка</span><span class="tool-badge" id="hint-badge">2</span>
+      <span class="tool-icon">?</span><span class="tool-label" data-i18n="hud.hint">Подсказка</span><span class="tool-badge" id="hint-badge">2</span>
     </button>
     <button class="tool" id="btn-post" type="button">
-      <span class="tool-icon">+</span><span class="tool-label">Столбик</span><span class="tool-badge" id="post-badge">1</span>
+      <span class="tool-icon">+</span><span class="tool-label" data-i18n="hud.post">Столбик</span><span class="tool-badge" id="post-badge">1</span>
     </button>
   </div>
 </div>
 
 <div id="screen-loading" class="screen">
-  <div class="logo">Кубоград</div>
+  <div class="logo" data-i18n="app.title">Кубоград</div>
   <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
 </div>
 
 <div id="screen-menu" class="screen hidden">
   <div class="menu-card">
-    <div class="logo">Кубоград</div>
-    <p class="menu-note">В каждом режиме свой город</p>
+    <div class="logo" data-i18n="app.title">Кубоград</div>
+    <p class="menu-note" data-i18n="menu.note">В каждом режиме свой город</p>
     <div class="modes" id="mode-list">
       <button class="mode-card" id="mode-easy" type="button" data-mode="easy">
         <canvas class="mode-city" id="mode-city-easy" width="600" height="144"></canvas>
-        <span class="mode-title">Лёгкий<i class="mode-medal hidden" id="mode-medal-easy"></i></span>
-        <span class="mode-progress" id="mode-progress-easy">Не начат</span>
+        <span class="mode-title"><span data-i18n="mode.easy.title">Лёгкий</span><i class="mode-medal hidden" id="mode-medal-easy"></i></span>
+        <span class="mode-progress" id="mode-progress-easy"></span>
       </button>
       <button class="mode-card" id="mode-normal" type="button" data-mode="normal">
         <canvas class="mode-city" id="mode-city-normal" width="600" height="144"></canvas>
-        <span class="mode-title">Средний<i class="mode-medal hidden" id="mode-medal-normal"></i></span>
-        <span class="mode-progress" id="mode-progress-normal">Не начат</span>
+        <span class="mode-title"><span data-i18n="mode.normal.title">Средний</span><i class="mode-medal hidden" id="mode-medal-normal"></i></span>
+        <span class="mode-progress" id="mode-progress-normal"></span>
       </button>
       <button class="mode-card" id="mode-hard" type="button" data-mode="hard">
         <canvas class="mode-city" id="mode-city-hard" width="600" height="144"></canvas>
-        <span class="mode-title">Сложный<i class="mode-medal hidden" id="mode-medal-hard"></i></span>
-        <span class="mode-progress" id="mode-progress-hard">Не начат</span>
+        <span class="mode-title"><span data-i18n="mode.hard.title">Сложный</span><i class="mode-medal hidden" id="mode-medal-hard"></i></span>
+        <span class="mode-progress" id="mode-progress-hard"></span>
       </button>
     </div>
     <div class="menu-row menu-row-end">
-      <button class="link" id="btn-menu-settings" type="button">Настройки</button>
+      <button class="link" id="btn-menu-settings" type="button" data-i18n="menu.settings">Настройки</button>
     </div>
   </div>
 </div>
 
 <div id="screen-win" class="screen hidden">
   <div class="menu-card">
-    <div class="win-title">Уровень пройден</div>
-    <div class="win-stats" id="win-stats">Ходов: 0</div>
-    <div class="win-city" id="win-city">В городе прибавилось домов: 0</div>
-    <button class="primary" id="btn-next" type="button">Далее</button>
+    <div class="win-title" data-i18n="result.title">Уровень пройден</div>
+    <div class="win-stats" id="win-stats"></div>
+    <div class="win-city" id="win-city"></div>
+    <button class="primary" id="btn-next" type="button" data-i18n="result.next">Далее</button>
   </div>
 </div>
 
 <div id="screen-settings" class="screen hidden">
   <div class="menu-card">
-    <div class="win-title">Настройки</div>
-    <button class="toggle" id="btn-restart" type="button">Начать уровень заново<span class="toggle-state">⟳</span></button>
-    <button class="toggle" id="btn-sound" type="button">Звук<span class="toggle-state" id="sound-state">вкл</span></button>
-    <button class="toggle" id="btn-vibro" type="button">Вибрация<span class="toggle-state" id="vibro-state">вкл</span></button>
-    <button class="toggle danger" id="btn-reset" type="button">Сбросить прогресс</button>
-    <button class="primary" id="btn-close-settings" type="button">Закрыть</button>
+    <div class="win-title" data-i18n="settings.title">Настройки</div>
+    <button class="toggle" id="btn-restart" type="button"><span data-i18n="settings.restart">Начать уровень заново</span><span class="toggle-state">⟳</span></button>
+    <button class="toggle" id="btn-sound" type="button"><span data-i18n="settings.sound">Звук</span><span class="toggle-state" id="sound-state">вкл</span></button>
+    <button class="toggle" id="btn-vibro" type="button"><span data-i18n="settings.vibro">Вибрация</span><span class="toggle-state" id="vibro-state">вкл</span></button>
+    <div class="toggle toggle-static">
+      <span data-i18n="settings.language">Язык</span>
+      <span class="lang-switch">
+        <button class="lang-option" id="btn-lang-ru" type="button" data-lang="ru">RU</button>
+        <button class="lang-option" id="btn-lang-en" type="button" data-lang="en">EN</button>
+      </span>
+    </div>
+    <button class="toggle danger" id="btn-reset" type="button" data-i18n="settings.reset">Сбросить прогресс</button>
+    <button class="primary" id="btn-close-settings" type="button" data-i18n="settings.close">Закрыть</button>
   </div>
 </div>
 
 <div id="toast" class="toast hidden"></div>
 
 <script type="module">
+const __src_i18n_js = (() => {
+// Словари и выбор языка. Модуль не трогает DOM и не ходит в сеть:
+// переводы лежат прямо здесь, потому что порталы запрещают догружать
+// файлы локализации по сети. Русский — основной, английский — для
+// зарубежных площадок Playgama.
+
+const STORAGE_KEY = 'cubesort.lang';
+const LANGS = ['ru', 'en'];
+const FALLBACK_LANG = 'en';
+const DEFAULT_LANG = 'ru';
+
+// Название не переводится, а транслитерируется: русская локаль и материалы
+// Яндекс.Игр — строго «Кубоград», международные площадки — «Kubograd».
+// Синонимы-переводы запрещены, подробности в GAME_NAME.md.
+
+const DICT = {
+  ru: {
+    'app.title': 'Кубоград',
+
+    'hud.menu': 'Меню',
+    'hud.settings': 'Настройки',
+    'hud.level': 'Уровень',
+    'hud.moves': 'Ходов {n}',
+    'hud.undo': 'Отменить',
+    'hud.hint': 'Подсказка',
+    'hud.post': 'Столбик',
+
+    'menu.note': 'В каждом режиме свой город',
+    'menu.settings': 'Настройки',
+    'menu.progress': 'Уровень {n} / {total}',
+    'menu.notStarted': '{note} · не начат',
+
+    'mode.easy.title': 'Лёгкий',
+    'mode.easy.note': 'Три цвета, много места',
+    'mode.normal.title': 'Средний',
+    'mode.normal.note': 'Ровный подъём до семи цветов',
+    'mode.hard.title': 'Сложный',
+    'mode.hard.note': 'Семь цветов, один запасной столбик',
+
+    'result.title': 'Уровень пройден',
+    'result.moves': 'Ходов: {n}',
+    'result.city': 'Домов в городе: {n}',
+    'result.next': 'Далее',
+
+    'settings.title': 'Настройки',
+    'settings.restart': 'Начать уровень заново',
+    'settings.sound': 'Звук',
+    'settings.vibro': 'Вибрация',
+    'settings.language': 'Язык',
+    'settings.reset': 'Сбросить прогресс',
+    'settings.close': 'Закрыть',
+    'settings.on': 'вкл',
+    'settings.off': 'выкл',
+
+    'toast.hintStuck': 'Отсюда подсказка не поможет — попробуй отменить ход',
+    'toast.rewardFailed': 'Награда не получена'
+  },
+  en: {
+    'app.title': 'Kubograd',
+
+    'hud.menu': 'Menu',
+    'hud.settings': 'Settings',
+    'hud.level': 'Level',
+    'hud.moves': 'Moves: {n}',
+    'hud.undo': 'Undo',
+    'hud.hint': 'Hint',
+    'hud.post': 'Column',
+
+    'menu.note': 'Every mode grows its own city',
+    'menu.settings': 'Settings',
+    'menu.progress': 'Level {n} / {total}',
+    'menu.notStarted': '{note} · New',
+
+    'mode.easy.title': 'Easy',
+    'mode.easy.note': 'Three colors, plenty of room',
+    'mode.normal.title': 'Normal',
+    'mode.normal.note': 'A steady climb to seven colors',
+    'mode.hard.title': 'Hard',
+    'mode.hard.note': 'Seven colors, one spare column',
+
+    'result.title': 'Level complete',
+    'result.moves': 'Moves: {n}',
+    'result.city': 'Houses in the city: {n}',
+    'result.next': 'Next',
+
+    'settings.title': 'Settings',
+    'settings.restart': 'Restart level',
+    'settings.sound': 'Sound',
+    'settings.vibro': 'Vibration',
+    'settings.language': 'Language',
+    'settings.reset': 'Reset progress',
+    'settings.close': 'Close',
+    'settings.on': 'on',
+    'settings.off': 'off',
+
+    'toast.hintStuck': 'No hint from here — try undoing a move',
+    'toast.rewardFailed': 'No reward this time'
+  }
+};
+
+// Предупреждать о забытом ключе имеет смысл только разработчику:
+// на площадке это мусор в консоли, за который снимают с модерации.
+const DEV = isDev();
+
+let current = DEFAULT_LANG;
+const listeners = [];
+
+function isDev() {
+  try {
+    const host = window.location.hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '';
+  } catch (error) {
+    return false;
+  }
+}
+
+function normalize(lang) {
+  if (typeof lang !== 'string') return '';
+  const short = lang.toLowerCase().split(/[-_]/)[0];
+  return LANGS.includes(short) ? short : '';
+}
+
+function readStored() {
+  try {
+    return normalize(localStorage.getItem(STORAGE_KEY));
+  } catch (error) {
+    // Приватный режим Safari режет localStorage — язык просто определим заново.
+    return '';
+  }
+}
+
+function writeStored(lang) {
+  try {
+    localStorage.setItem(STORAGE_KEY, lang);
+  } catch (error) {
+    // Выбор не переживёт перезагрузку, но игру это не ломает.
+  }
+}
+
+function readNavigator() {
+  try {
+    const list = navigator.languages && navigator.languages.length
+      ? navigator.languages
+      : [navigator.language];
+    for (let i = 0; i < list.length; i += 1) {
+      const lang = normalize(list[i]);
+      if (lang) return lang;
+    }
+  } catch (error) {
+    // Нет navigator — уйдём в фолбэк.
+  }
+  return '';
+}
+
+// Порядок из задачи: выбор игрока → язык площадки → язык браузера → фолбэк.
+function detectLanguage(platformLang) {
+  return readStored() || normalize(platformLang) || readNavigator() || FALLBACK_LANG;
+}
+
+// Первичная установка: язык площадки не запоминаем в localStorage,
+// иначе игрок навсегда получит то, что отдал портал в первый заход.
+function initLanguage(platformLang) {
+  current = detectLanguage(platformLang);
+  notify();
+  return current;
+}
+
+function getLanguage() {
+  return current;
+}
+
+// Явный выбор игрока — его и сохраняем.
+function setLanguage(lang) {
+  const next = normalize(lang);
+  if (!next || next === current) return current;
+  current = next;
+  writeStored(next);
+  notify();
+  return current;
+}
+
+function onLanguageChange(listener) {
+  listeners.push(listener);
+}
+
+function notify() {
+  for (let i = 0; i < listeners.length; i += 1) listeners[i](current);
+}
+
+function t(key, params) {
+  const table = DICT[current] || DICT[FALLBACK_LANG];
+  let text = table[key];
+  if (text === undefined) text = DICT[FALLBACK_LANG][key];
+  if (text === undefined) {
+    if (DEV) console.warn(`[i18n] нет ключа: ${key}`);
+    return key;
+  }
+  if (!params) return text;
+  return text.replace(/\{(\w+)\}/g, (match, name) => (
+    params[name] === undefined ? match : String(params[name])
+  ));
+}
+
+return { LANGS, FALLBACK_LANG, DICT, detectLanguage, initLanguage, getLanguage, setLanguage, onLanguageChange, t };
+})();
 const __levels_levels_easy_js = (() => {
 // Сгенерировано tools/gen-levels.js. Руками не править.
 const LEVELS_EASY = [{"id":1,"seed":7932,"capacity":3,"colors":3,"posts":[[0],[1],[2,2,2],[0,0],[1,1]],"parMoves":2},{"id":2,"seed":15851,"capacity":3,"colors":3,"posts":[[0],[1,2],[2,2],[1,1],[0,0]],"parMoves":3},{"id":3,"seed":23770,"capacity":3,"colors":3,"posts":[[0,0],[1,1,0],[2],[2],[1,2]],"parMoves":4},{"id":4,"seed":31689,"capacity":3,"colors":3,"posts":[[0,1],[],[2,0],[2,0,1],[2,1]],"parMoves":7},{"id":5,"seed":39608,"capacity":3,"colors":3,"posts":[[0],[],[2,1,0],[1,2,1],[2,0]],"parMoves":6},{"id":6,"seed":47527,"capacity":4,"colors":3,"posts":[[0,2,1],[],[2,2,0,1],[0,2,1],[0,1]],"parMoves":9},{"id":7,"seed":55446,"capacity":4,"colors":3,"posts":[[0,1,0],[1,1,2,0],[],[2,0],[2,2,1]],"parMoves":7},{"id":8,"seed":63365,"capacity":4,"colors":3,"posts":[[],[1,2,1,0],[2,1,0,1],[2,0],[0,2]],"parMoves":9},{"id":9,"seed":71284,"capacity":4,"colors":3,"posts":[[0,2,1],[1],[2,0,0,2],[0,1],[2,1]],"parMoves":8},{"id":10,"seed":79203,"capacity":4,"colors":3,"posts":[[0,1,2],[1,2],[],[0,1,2,1],[0,0,2]],"parMoves":9},{"id":11,"seed":87122,"capacity":4,"colors":3,"posts":[[0],[],[2,1,0,1],[2,2,0],[1,0,2,1]],"parMoves":9},{"id":12,"seed":95041,"capacity":4,"colors":3,"posts":[[0,1,1,2],[],[2,0,1],[2,0],[2,0,1]],"parMoves":9},{"id":13,"seed":102960,"capacity":4,"colors":3,"posts":[[],[1,2,0],[2,0],[1,1,2,0],[1,2,0]],"parMoves":9},{"id":14,"seed":110879,"capacity":4,"colors":4,"posts":[[0,1,2,1],[],[2,1],[3,0,2],[3,3,0,1],[3,2,0]],"parMoves":12},{"id":15,"seed":118798,"capacity":4,"colors":4,"posts":[[0,2],[1,2],[],[3,1,0,1],[0,2,1,2],[3,3,3,0]],"parMoves":11},{"id":16,"seed":126717,"capacity":4,"colors":4,"posts":[[0,1,0,3],[3,0],[2,2,1,0],[],[2,2,1,3],[1,3]],"parMoves":10},{"id":17,"seed":134636,"capacity":4,"colors":4,"posts":[[0,0,2],[1,2],[],[3,3,1,2],[1,3,0,2],[3,0,1]],"parMoves":11},{"id":18,"seed":142555,"capacity":4,"colors":4,"posts":[[1,1,3],[1,2,3],[2,1,0,2],[],[0,2],[3,0,0,3]],"parMoves":11},{"id":19,"seed":150474,"capacity":4,"colors":4,"posts":[[0,2,3],[1,0,1,3],[2,2,1,0],[3,3,1],[],[0,2]],"parMoves":11},{"id":20,"seed":158393,"capacity":4,"colors":4,"posts":[[0,1],[1,2],[2,1,2],[3,1,2,3],[0,3],[0,0,3]],"parMoves":11},{"id":21,"seed":166312,"capacity":4,"colors":4,"posts":[[0,1,3,2],[1,1,0,3],[2,2,3,0],[],[0,1,2,3],[]],"parMoves":11},{"id":22,"seed":174231,"capacity":4,"colors":4,"posts":[[0,1,0,1],[],[2,2,0],[3,1,3,2],[3,0,1],[2,3]],"parMoves":12},{"id":23,"seed":182150,"capacity":4,"colors":4,"posts":[[0,2,0],[1,1,0],[2,1,3],[],[0,1,3,2],[3,2,3]],"parMoves":11},{"id":24,"seed":190069,"capacity":4,"colors":4,"posts":[[0],[],[2,1,2,1],[3,3,1,0],[3,2,0],[1,2,3,0]],"parMoves":11},{"id":25,"seed":197988,"capacity":4,"colors":4,"posts":[[0,0,0,1],[1,2,3],[2,1,3],[],[0,2,3],[2,1,3]],"parMoves":11},{"id":26,"seed":205907,"capacity":4,"colors":4,"posts":[[0,2,3,0],[],[2,2,3,1],[1],[3,0,1],[2,0,3,1]],"parMoves":11},{"id":27,"seed":213826,"capacity":4,"colors":4,"posts":[[0,3],[1,3,1,0],[2,3,0],[],[2,2,2,1],[1,3,0]],"parMoves":11},{"id":28,"seed":221745,"capacity":4,"colors":4,"posts":[[0,0,3,1],[1,2],[2],[3,3,1,0],[0,2],[3,1,2]],"parMoves":10},{"id":29,"seed":229664,"capacity":4,"colors":4,"posts":[[0,0,0,2],[],[2,1,3,1],[3,1],[2,3],[0,2,1,3]],"parMoves":11},{"id":30,"seed":237583,"capacity":4,"colors":4,"posts":[[0,0,3,1],[],[2],[3,0,3,1],[3,1,2],[0,2,1,2]],"parMoves":12},{"id":31,"seed":245502,"capacity":4,"colors":5,"posts":[[0,2,0],[1,4,4,3],[],[3,0,2],[4,1,0],[3,4,2],[1,1,3,2]],"parMoves":14},{"id":32,"seed":253421,"capacity":4,"colors":5,"posts":[[0,0,2,4],[1,0,1,2],[2,3,4],[3,4],[],[1,3,4],[1,0,2,3]],"parMoves":15},{"id":33,"seed":261340,"capacity":4,"colors":5,"posts":[[0,2,3,2],[1,1,0,3],[4,0,3],[3,2],[],[4,1,1,2],[4,0,4]],"parMoves":14},{"id":34,"seed":269259,"capacity":4,"colors":5,"posts":[[0,1,0,2],[1,3,2,0],[2,3],[3],[4,4,4,1],[3],[4,1,0,2]],"parMoves":14},{"id":35,"seed":277178,"capacity":4,"colors":5,"posts":[[0,3,4,3],[1,1,4],[2,0,3,4],[3,1],[],[2,2,1],[2,0,0,4]],"parMoves":13},{"id":36,"seed":285097,"capacity":4,"colors":5,"posts":[[0,4,1,2],[1,1,2,3],[],[],[4,4,0,2],[0,4,3,0],[1,3,2,3]],"parMoves":15},{"id":37,"seed":293016,"capacity":4,"colors":5,"posts":[[0,3,2,1],[],[2,2,4,1],[3,0,0,4],[],[0,4,1,2],[3,4,3,1]],"parMoves":15},{"id":38,"seed":300935,"capacity":4,"colors":5,"posts":[[0,4,3,1],[1,2,4],[2,4,2],[3,3,3,1],[4,0,2],[0,0,1],[]],"parMoves":13},{"id":39,"seed":308854,"capacity":4,"colors":5,"posts":[[0,0,0,4],[],[2,1,2],[3,3,4,1],[4,1,2],[3,3,0,4],[2,1]],"parMoves":12},{"id":40,"seed":316773,"capacity":4,"colors":5,"posts":[[1],[],[2,3,2,0],[3,4,2,4],[1,0,0,3],[2,0,1],[4,4,3,1]],"parMoves":14},{"id":41,"seed":324692,"capacity":4,"colors":5,"posts":[[],[1,4,0],[2,3,0,2],[3,3,2,1],[4,3,0],[4,4,1],[1,2,0]],"parMoves":14},{"id":42,"seed":332611,"capacity":4,"colors":5,"posts":[[0,0,0,1],[1,3,0,2],[2,4],[3,1,3,4],[4,2],[],[3,1,4,2]],"parMoves":13},{"id":43,"seed":340530,"capacity":4,"colors":5,"posts":[[0,1,2],[1,1,2],[],[3,0,1,2],[4,0,2],[4,3,0,3],[4,4,3]],"parMoves":14},{"id":44,"seed":348449,"capacity":4,"colors":5,"posts":[[0,2,0,2],[1,1,3,0],[4,0,3,4],[3,3,2,4],[],[],[1,1,2,4]],"parMoves":14},{"id":45,"seed":356368,"capacity":4,"colors":5,"posts":[[],[1,2,0],[2,2,4,1],[3,2,0],[4,0],[3,3,3,4],[1,4,1,0]],"parMoves":13},{"id":46,"seed":364287,"capacity":4,"colors":5,"posts":[[0,4,3,0],[1,3,1,4],[],[3,2],[4,0,2],[1,4,2],[3,1,0,2]],"parMoves":16},{"id":47,"seed":372206,"capacity":4,"colors":5,"posts":[[0,1],[1,2],[2,1,2],[3,4,0,4],[2,1],[4,0,4],[3,3,3,0]],"parMoves":13},{"id":48,"seed":380125,"capacity":4,"colors":5,"posts":[[0,4],[1,1,0],[2,4],[3,2,0,1],[4,2],[4,1,2],[3,3,3,0]],"parMoves":12},{"id":49,"seed":388044,"capacity":4,"colors":5,"posts":[[0,4],[1,4,0],[2,2,1],[3,1,4,3],[4,1],[3,0],[2,2,3,0]],"parMoves":13},{"id":50,"seed":395963,"capacity":4,"colors":5,"posts":[[0,1,2],[2,1,2],[],[3,4,3,1],[4,4,0,2],[3,3,0],[4,0,1]],"parMoves":14},{"id":51,"seed":403882,"capacity":4,"colors":5,"posts":[[0,4,3,0],[1,1,1,2],[2,0],[],[4,2,3],[4,0,3],[4,3,2,1]],"parMoves":14},{"id":52,"seed":411801,"capacity":4,"colors":5,"posts":[[],[1,0,3,0],[2,1,1,3],[],[4,0,4,3],[4,2,2,3],[2,1,4,0]],"parMoves":15},{"id":53,"seed":419720,"capacity":4,"colors":5,"posts":[[0,2,4],[],[2,0,0,1],[3,3,1,4],[4,2],[3,0,2,1],[3,4,1]],"parMoves":14},{"id":54,"seed":427639,"capacity":4,"colors":5,"posts":[[0,1,1,3],[1,3],[2,3],[4,0,1],[4,2],[4,2,0,2],[4,3,0]],"parMoves":15},{"id":55,"seed":435558,"capacity":4,"colors":5,"posts":[[],[1,1,0],[2,0,4,2],[3,2,4,3],[4,4,0],[3,1],[1,2,0,3]],"parMoves":14},{"id":56,"seed":443477,"capacity":4,"colors":5,"posts":[[0,3],[1,3],[2,1,1,0],[],[4,4,2,3],[4,4,2,1],[0,2,0,3]],"parMoves":13},{"id":57,"seed":451396,"capacity":4,"colors":5,"posts":[[0,1,1,0],[1,2],[2,1,4,2],[3,3,4,3],[4,0,3],[4,2,0],[]],"parMoves":13},{"id":58,"seed":459315,"capacity":4,"colors":5,"posts":[[],[1,0],[2,2,3,1],[3,3,0],[4,4,2,1],[4,2,0],[4,3,1,0]],"parMoves":13},{"id":59,"seed":467234,"capacity":4,"colors":5,"posts":[[],[1,0],[2,4,1,4],[3,1,1,0],[4,0],[2,2,3,2],[3,3,4,0]],"parMoves":13},{"id":60,"seed":475153,"capacity":4,"colors":5,"posts":[[0,1,3,0],[1,1,2,3],[2,1,4,3],[],[2,0],[4,4,2,4],[3,0]],"parMoves":13}];
@@ -550,11 +797,13 @@ const CURVES = {
   ]
 };
 
+// Название и подпись режима лежат ключами: строки живут в словаре,
+// игровой модуль о языке не знает.
 const MODES = {
   easy: {
     id: 'easy',
-    title: 'Лёгкий',
-    note: 'Три цвета, много места',
+    titleKey: 'mode.easy.title',
+    noteKey: 'mode.easy.note',
     material: 'wood',
     shuffleFactor: 0.8,
     // Первые уровни — обучение без текста, они решаются за два-три хода.
@@ -564,8 +813,8 @@ const MODES = {
   },
   normal: {
     id: 'normal',
-    title: 'Средний',
-    note: 'Ровный подъём до семи цветов',
+    titleKey: 'mode.normal.title',
+    noteKey: 'mode.normal.note',
     material: 'stone',
     shuffleFactor: 1,
     tutorial: true,
@@ -574,8 +823,8 @@ const MODES = {
   },
   hard: {
     id: 'hard',
-    title: 'Сложный',
-    note: 'Семь цветов, один запасной столбик',
+    titleKey: 'mode.hard.title',
+    noteKey: 'mode.hard.note',
     material: 'glass',
     shuffleFactor: 1.35,
     // В сложном обучения нет: первый уровень сразу настоящий.
@@ -3831,12 +4080,16 @@ const __src_ui_hud_js = (() => {
 // DOM-оверлей поверх канваса: счётчики и кнопки. Разметка лежит
 // в index.html, здесь только связывание и обновление.
 
+const { t } = __src_i18n_js;
+
 // Сколько бесплатных попыток в уровне — задаёт режим, здесь только
 // значения по умолчанию до его выбора.
 const DEFAULT_LIMITS = { undo: 3, hint: 2, post: 1 };
 
 function createHud(handlers) {
   const limits = { ...DEFAULT_LIMITS };
+  // Последнее значение счётчика: при смене языка строку нужно собрать заново.
+  let lastMoves = 0;
   const root = document.getElementById('hud');
   const levelNumber = document.getElementById('level-number');
   const levelGoal = document.getElementById('level-goal');
@@ -3875,7 +4128,11 @@ function createHud(handlers) {
     },
     // Счётчик ходов и ничего больше: порогов и оценок в игре нет.
     setGoal(moves) {
-      levelGoal.textContent = `Ходов ${moves}`;
+      lastMoves = moves;
+      levelGoal.textContent = t('hud.moves', { n: moves });
+    },
+    refreshLanguage() {
+      levelGoal.textContent = t('hud.moves', { n: lastMoves });
     },
     // Когда бесплатные попытки кончились — на бейдже значок рекламы.
     update(status) {
@@ -3906,6 +4163,7 @@ const __src_ui_screens_js = (() => {
 // Миниатюры городов на карточках рисует город — здесь только вставка.
 
 const { MODE_IDS, MODES, MEDAL_COLORS, LEVEL_COUNT } = __src_game_modes_js;
+const { t, getLanguage, setLanguage, LANGS } = __src_i18n_js;
 
 const TOAST_MS = 1600;
 // Откуда в городе начинается полоса миниатюры.
@@ -3935,7 +4193,13 @@ function createScreens(handlers) {
   const vibroState = document.getElementById('vibro-state');
   const toast = document.getElementById('toast');
   const restartButton = document.getElementById('btn-restart');
+  const langButtons = {};
   let toastTimer = 0;
+  // Последние показанные данные: смена языка перерисовывает экран из них,
+  // не требуя от вызывающего кода повторять аргументы.
+  let lastMenu = null;
+  let lastWin = null;
+  let lastSettings = null;
 
   document.getElementById('btn-next').addEventListener('click', handlers.next);
   document.getElementById('btn-menu-settings').addEventListener('click', handlers.openSettings);
@@ -3944,6 +4208,19 @@ function createScreens(handlers) {
   document.getElementById('btn-vibro').addEventListener('click', handlers.toggleVibro);
   document.getElementById('btn-reset').addEventListener('click', handlers.resetProgress);
   document.getElementById('btn-restart').addEventListener('click', handlers.restart);
+  LANGS.forEach((lang) => {
+    const node = document.getElementById(`btn-lang-${lang}`);
+    if (!node) return;
+    langButtons[lang] = node;
+    node.addEventListener('click', () => setLanguage(lang));
+  });
+
+  function markLanguage() {
+    const active = getLanguage();
+    LANGS.forEach((lang) => {
+      if (langButtons[lang]) langButtons[lang].classList.toggle('active', lang === active);
+    });
+  }
 
   // Миниатюра — вырезка из настоящего города режима: берём полосу
   // с площадкой и застройкой один в один, без растяжения.
@@ -3970,12 +4247,13 @@ function createScreens(handlers) {
     // Каждая карточка показывает свой город, свой уровень и медаль за режим.
     showMenu(states) {
       hideAll();
+      lastMenu = states;
       MODE_IDS.forEach((mode) => {
         const card = modeCards[mode];
         const state = states[mode];
         card.progress.textContent = state.started
-          ? `Уровень ${Math.min(state.level, LEVEL_COUNT)} / ${LEVEL_COUNT}`
-          : `${MODES[mode].note} · не начат`;
+          ? t('menu.progress', { n: Math.min(state.level, LEVEL_COUNT), total: LEVEL_COUNT })
+          : t('menu.notStarted', { note: t(MODES[mode].noteKey) });
         // Медаль — кружок в цвет металла, без подписи.
         card.medal.classList.toggle('hidden', !state.medal);
         if (state.medal) card.medal.style.background = MEDAL_COLORS[state.medal];
@@ -3985,13 +4263,16 @@ function createScreens(handlers) {
     },
     showWin({ moves, cityCount }) {
       hideAll();
-      winStats.textContent = `Ходов: ${moves}`;
-      winCity.textContent = `Домов в городе: ${cityCount}`;
+      lastWin = { moves, cityCount };
+      winStats.textContent = t('result.moves', { n: moves });
+      winCity.textContent = t('result.city', { n: cityCount });
       nodes.win.classList.remove('hidden');
     },
     showSettings(settings, inGame) {
-      soundState.textContent = settings.muted ? 'выкл' : 'вкл';
-      vibroState.textContent = settings.vibro ? 'вкл' : 'выкл';
+      lastSettings = { settings, inGame };
+      soundState.textContent = t(settings.muted ? 'settings.off' : 'settings.on');
+      vibroState.textContent = t(settings.vibro ? 'settings.on' : 'settings.off');
+      markLanguage();
       // «Заново» нужен только внутри уровня.
       restartButton.classList.toggle('hidden', !inGame);
       nodes.settings.classList.remove('hidden');
@@ -4003,6 +4284,20 @@ function createScreens(handlers) {
       return !nodes.settings.classList.contains('hidden');
     },
     hideAll,
+    // Перерисовка после смены языка: молча обновляем то, что уже на экране.
+    // Видимость считаем заранее — showMenu и showWin зовут hideAll и иначе
+    // закрыли бы открытые поверх них настройки.
+    refreshLanguage() {
+      const openMenu = !nodes.menu.classList.contains('hidden');
+      const openWin = !nodes.win.classList.contains('hidden');
+      const openSettings = !nodes.settings.classList.contains('hidden');
+      if (openMenu && lastMenu) this.showMenu(lastMenu);
+      if (openWin && lastWin) this.showWin(lastWin);
+      if (openSettings && lastSettings) {
+        this.showSettings(lastSettings.settings, lastSettings.inGame);
+      }
+      markLanguage();
+    },
     toast(message) {
       toast.textContent = message;
       toast.classList.remove('hidden');
@@ -4135,8 +4430,9 @@ function createNoneAdapter() {
   return {
     name: 'none',
     async init() {},
+    // Заглушка своего языка не имеет: пусть решает выбор игрока и браузер.
     language() {
-      return 'ru';
+      return '';
     },
     ready() {},
     gameplayStart() {},
@@ -4290,108 +4586,171 @@ function createYandexAdapter() {
 return { createYandexAdapter };
 })();
 const __src_platform_playgama_js = (() => {
-// Реализация фасада под Playgama Bridge. Подключается тем же способом,
-// что и Яндекс: только когда мост реально присутствует на странице.
+// Реализация фасада под Playgama Bridge v2. Все имена методов и значения
+// состояний — из документации моста, не из головы:
+// https://wiki.playgama.com/playgama/bridge-sdk/api
+// Модули моста (platform, storage, advertisement) недоступны до
+// bridge.initialize() — обращаться к ним раньше нельзя, SDK ругается в консоль.
 
-const LOCAL_KEY = 'cubesort.save';
 const SAVE_KEY = 'save';
+// Зеркало сейва: тот же ключ, что у заглушки и Яндекса, — иначе прогресс
+// сессии, отработавшей без моста, потеряется при следующем заходе.
+const LOCAL_KEY = 'cubesort.save';
+// platform.id в окружении, которое мост не поддерживает: локальный запуск,
+// GitHub Pages. Играем там как без SDK.
+const MOCK_PLATFORM = 'mock';
+
+const INTERSTITIAL_CLOSED = 'closed';
+const INTERSTITIAL_FAILED = 'failed';
+const REWARDED_REWARDED = 'rewarded';
+const REWARDED_CLOSED = 'closed';
+const REWARDED_FAILED = 'failed';
 
 function createPlaygamaAdapter() {
   const bridge = window.bridge;
-  let lang = 'ru';
+  let lang = '';
+  let platformId = '';
+
+  function events() {
+    return (bridge && bridge.EVENT_NAME) || {};
+  }
+
+  function messages() {
+    return (bridge && bridge.PLATFORM_MESSAGE) || {};
+  }
 
   return {
     name: 'playgama',
     async init() {
-      if (bridge && bridge.initialize) await bridge.initialize();
-      // Язык моста читаем до UI — симметрично Яндексу (§2.14).
-      try {
-        lang = (bridge && bridge.platform && bridge.platform.language) || 'ru';
-      } catch (error) {
-        lang = 'ru';
-      }
+      await bridge.initialize();
+      platformId = bridge.platform.id || '';
+      // Язык моста: площадка, а если она молчит — язык браузера. Пустую
+      // строку отдаём как «неизвестно», чтобы решал i18n.
+      lang = bridge.platform.language || '';
+    },
+    // Мост поднялся, но настоящей площадки за ним нет.
+    isMock() {
+      return platformId === MOCK_PLATFORM;
     },
     language() {
       return lang;
     },
+    isAudioEnabled() {
+      return bridge.platform.isAudioEnabled !== false;
+    },
+    // Площадка вправе потребовать тишины — например, когда игрок ушёл
+    // на другую вкладку портала.
+    onAudioStateChanged(listener) {
+      bridge.platform.on(events().AUDIO_STATE_CHANGED, (enabled) => listener(enabled !== false));
+    },
+    // Пауза по требованию площадки: игрок открыл оверлей портала, свернул
+    // вкладку, ответил на звонок.
+    isPaused() {
+      return bridge.platform.isPaused === true;
+    },
+    onPauseStateChanged(listener) {
+      bridge.platform.on(events().PAUSE_STATE_CHANGED, (paused) => listener(paused === true));
+    },
     ready() {
-      if (bridge && bridge.platform && bridge.platform.sendMessage) {
-        bridge.platform.sendMessage('game_ready');
-      }
+      bridge.platform.sendMessage(messages().GAME_READY);
     },
-    gameplayStart() {
-      if (bridge && bridge.platform && bridge.platform.sendMessage) {
-        bridge.platform.sendMessage('gameplay_started');
-      }
+    gameplayStart(info) {
+      bridge.platform.sendMessage(messages().LEVEL_STARTED, info);
     },
-    gameplayStop() {
-      if (bridge && bridge.platform && bridge.platform.sendMessage) {
-        bridge.platform.sendMessage('gameplay_stopped');
-      }
+    gameplayStop(info) {
+      bridge.platform.sendMessage(messages().LEVEL_PAUSED, info);
+    },
+    gameplayComplete(info) {
+      bridge.platform.sendMessage(messages().LEVEL_COMPLETED, info);
     },
     showAd() {
-      if (!bridge || !bridge.advertisement) return Promise.resolve(false);
+      const ads = bridge.advertisement;
+      if (!ads) return Promise.resolve(false);
       return new Promise((resolve) => {
+        const name = events().INTERSTITIAL_STATE_CHANGED;
         const handler = (state) => {
-          if (state === 'closed' || state === 'failed') {
-            bridge.advertisement.off('interstitial_state_changed', handler);
-            resolve(state === 'closed');
-          }
+          if (state !== INTERSTITIAL_CLOSED && state !== INTERSTITIAL_FAILED) return;
+          ads.off(name, handler);
+          resolve(state === INTERSTITIAL_CLOSED);
         };
-        bridge.advertisement.on('interstitial_state_changed', handler);
-        bridge.advertisement.showInterstitial();
+        ads.on(name, handler);
+        ads.showInterstitial();
       });
     },
     showRewarded() {
-      if (!bridge || !bridge.advertisement) return Promise.resolve(false);
+      const ads = bridge.advertisement;
+      if (!ads) return Promise.resolve(false);
       return new Promise((resolve) => {
+        const name = events().REWARDED_STATE_CHANGED;
         let rewarded = false;
         const handler = (state) => {
-          if (state === 'rewarded') rewarded = true;
-          if (state === 'closed' || state === 'failed') {
-            bridge.advertisement.off('rewarded_state_changed', handler);
-            resolve(rewarded);
-          }
+          // Награда только по 'rewarded': на 'closed' игрок получил бы её,
+          // не досмотрев ролик.
+          if (state === REWARDED_REWARDED) rewarded = true;
+          if (state !== REWARDED_CLOSED && state !== REWARDED_FAILED) return;
+          ads.off(name, handler);
+          resolve(rewarded);
         };
-        bridge.advertisement.on('rewarded_state_changed', handler);
-        bridge.advertisement.showRewarded();
+        ads.on(name, handler);
+        ads.showRewarded();
       });
     },
+    // storage.set принимает два массива — ключи и значения.
     async save(data) {
-      if (bridge && bridge.storage) {
-        try {
-          await bridge.storage.set(SAVE_KEY, data);
-          return;
-        } catch (error) {
-          // Падаем на localStorage.
-        }
-      }
+      writeLocal(data);
       try {
-        localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+        await bridge.storage.set([SAVE_KEY], [data]);
       } catch (error) {
-        // Ничего не поделать.
+        // Облако недоступно — прогресс остался в зеркале.
       }
     },
+    // storage.get возвращает массив в порядке запрошенных ключей,
+    // null за отсутствующий ключ.
     async load() {
-      if (bridge && bridge.storage) {
-        try {
-          const data = await bridge.storage.get(SAVE_KEY);
-          if (data) return data;
-        } catch (error) {
-          // Падаем на localStorage.
-        }
-      }
-      try {
-        const raw = localStorage.getItem(LOCAL_KEY);
-        return raw ? JSON.parse(raw) : null;
-      } catch (error) {
-        return null;
-      }
+      const cloud = await readCloud(bridge);
+      const local = readLocal();
+      if (!cloud) return local;
+      if (!local) return cloud;
+      // Сессия без моста писала только в зеркало. Если оно свежее облака,
+      // поднимаем его вперёд — иначе прогресс той сессии откатится.
+      return stampOf(local) > stampOf(cloud) ? local : cloud;
     }
   };
 }
 
-return { createPlaygamaAdapter };
+async function readCloud(bridge) {
+  try {
+    const data = await bridge.storage.get([SAVE_KEY]);
+    return (Array.isArray(data) ? data[0] : data) || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function readLocal() {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeLocal(data) {
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+  } catch (error) {
+    // Приватный режим режет localStorage — облако всё равно основное.
+  }
+}
+
+// Сохранения до появления штампа считаем самыми старыми: при равенстве
+// выигрывает облако.
+function stampOf(data) {
+  return data && typeof data.savedAt === 'number' ? data.savedAt : 0;
+}
+
+return { MOCK_PLATFORM, createPlaygamaAdapter };
 })();
 const __src_platform_sdk_js = (() => {
 // Единый фасад площадок. Игра знает только про эти методы,
@@ -4403,47 +4762,101 @@ const { createPlaygamaAdapter } = __src_platform_playgama_js;
 
 const INTERSTITIAL_COOLDOWN_MS = 180000;
 const FIRST_AD_LEVEL = 3;
+// Дольше игрок ждать не должен: если SDK не поднялся за это время,
+// уходим на заглушку и играем без площадки.
+const INIT_TIMEOUT_MS = 5000;
 
 let adapter = createNoneAdapter();
 let lastInterstitial = 0;
+let audioListener = null;
+let pauseListener = null;
 
+// Яндекс проверяется первым: под него написан отдельный адаптер по
+// требованиям гайда, и мост его подменять не должен.
 function detectAdapter() {
-  if (window.bridge && window.bridge.platform) return createPlaygamaAdapter();
   const host = window.location.hostname || '';
   if (window.YaGames || host.includes('yandex') || host.includes('games.s3')) return createYandexAdapter();
+  // Признак моста — только метод initialize. Трогать bridge.platform до
+  // инициализации нельзя: SDK возвращает undefined и пишет ошибку в консоль.
+  if (window.bridge && typeof window.bridge.initialize === 'function') return createPlaygamaAdapter();
   return createNoneAdapter();
 }
 
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('platform init timeout')), ms);
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
 async function initPlatform() {
-  adapter = detectAdapter();
+  const candidate = detectAdapter();
+  adapter = candidate;
   try {
-    await adapter.init();
+    await withTimeout(Promise.resolve(candidate.init()), INIT_TIMEOUT_MS);
+    // Мост поднялся, но площадки за ним нет (локальный запуск, GitHub Pages):
+    // ведём себя ровно так, как будто SDK не подключали.
+    if (candidate.isMock && candidate.isMock()) adapter = createNoneAdapter();
   } catch (error) {
     // Если SDK не поднялся, играем без него — это не повод падать.
     adapter = createNoneAdapter();
   }
+  if (audioListener) bindAudio();
+  if (pauseListener) bindPause();
   return adapter.name;
+}
+
+// Площадка может запретить звук — тогда игра молчит независимо от настройки
+// игрока. Слушателя ставим один раз, до и после выбора адаптера.
+function bindAudio() {
+  if (adapter.onAudioStateChanged) adapter.onAudioStateChanged(audioListener);
+  audioListener(adapter.isAudioEnabled ? adapter.isAudioEnabled() : true);
+}
+
+function onAudioState(listener) {
+  audioListener = listener;
+  bindAudio();
+}
+
+// Площадка вправе поставить игру на паузу — например, когда игрок открыл
+// её оверлей поверх канваса.
+function bindPause() {
+  if (adapter.onPauseStateChanged) adapter.onPauseStateChanged(pauseListener);
+  pauseListener(adapter.isPaused ? adapter.isPaused() : false);
+}
+
+function onPauseState(listener) {
+  pauseListener = listener;
+  bindPause();
 }
 
 function platformName() {
   return adapter.name;
 }
 
-// Язык площадки, прочитанный из SDK во время init (§2.14).
+// Язык площадки, прочитанный из SDK во время init (§2.14). Пустая строка
+// означает «площадка языка не назвала» — тогда решает i18n.
 function language() {
-  return adapter.language ? adapter.language() : 'ru';
+  return adapter.language ? adapter.language() : '';
 }
 
 function ready() {
   adapter.ready();
 }
 
-function gameplayStart() {
-  adapter.gameplayStart();
+function gameplayStart(info) {
+  adapter.gameplayStart(info);
 }
 
-function gameplayStop() {
-  adapter.gameplayStop();
+function gameplayStop(info) {
+  adapter.gameplayStop(info);
+}
+
+// Уровень пройден — это отдельное сообщение, а не «геймплей остановлен».
+// Адаптеры без него (Яндекс, заглушка) просто закрывают геймплей.
+function gameplayComplete(info) {
+  if (adapter.gameplayComplete) adapter.gameplayComplete(info);
+  else adapter.gameplayStop(info);
 }
 
 // Интерстишл не чаще раза в 3 минуты и не раньше третьего уровня.
@@ -4462,15 +4875,17 @@ async function showRewarded() {
   return adapter.showRewarded();
 }
 
+// Штамп времени ставит фасад, а не игра: по нему адаптер площадки решает,
+// что свежее — облако или локальное зеркало.
 async function save(data) {
-  return adapter.save(data);
+  return adapter.save({ ...data, savedAt: Date.now() });
 }
 
 async function load() {
   return adapter.load();
 }
 
-return { initPlatform, platformName, language, ready, gameplayStart, gameplayStop, canShowInterstitial, showInterstitial, showRewarded, save, load };
+return { initPlatform, onAudioState, onPauseState, platformName, language, ready, gameplayStart, gameplayStop, gameplayComplete, canShowInterstitial, showInterstitial, showRewarded, save, load };
 })();
 const __src_main_js = (() => {
 // Точка входа: игровой цикл, ввод и склейка модулей.
@@ -4496,6 +4911,7 @@ const { createHud } = __src_ui_hud_js;
 const { createScreens } = __src_ui_screens_js;
 const { createDebug } = __src_ui_debug_js;
 const platform = __src_platform_sdk_js;
+const { t, initLanguage, getLanguage, onLanguageChange } = __src_i18n_js;
 
 const LIFT_MS = 120;
 const BOB_AMPLITUDE = 3;
@@ -4652,7 +5068,7 @@ const screens = createScreens({
   },
   toggleSound: () => {
     app.settings.muted = !app.settings.muted;
-    sfx.setMuted(app.settings.muted);
+    applyMute();
     screens.showSettings(app.settings, app.screen === 'game');
   },
   toggleVibro: () => {
@@ -4671,17 +5087,44 @@ const screens = createScreens({
   }
 });
 
+// Звук выключен, если так решил игрок или так требует площадка.
+let platformAudio = true;
+// Первый кадр после паузы не должен нести накопленное время простоя.
+let skipDelta = false;
+function applyMute() {
+  sfx.setMuted(app.settings.muted || !platformAudio);
+}
+
 function vibrate(ms) {
   if (!app.settings.vibro || !navigator.vibrate) return;
   navigator.vibrate(ms);
 }
 
-// Игра одноязычная: поддержан только русский. Язык из SDK читается, чтобы
-// выставить корректный lang документа; неподдержанный язык откатывается на ru.
-const SUPPORTED_LANGS = ['ru'];
-function applyLanguage(lang) {
-  document.documentElement.lang = SUPPORTED_LANGS.includes(lang) ? lang : 'ru';
+const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+
+// Единственное место, где язык встречается с DOM: атрибут lang, заголовок
+// вкладки и все статические подписи из разметки.
+function applyLanguage() {
+  document.documentElement.lang = getLanguage();
+  // Логотип на загрузке ждал именно этого момента.
+  document.documentElement.classList.add('lang-ready');
+  document.title = t('app.title');
+  if (appTitle) appTitle.setAttribute('content', t('app.title'));
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-aria]').forEach((node) => {
+    node.setAttribute('aria-label', t(node.dataset.i18nAria));
+  });
 }
+
+// Смена языка на лету: статика из разметки, счётчик ходов и открытый экран.
+// Сцену трогать не нужно — в канвасе текста нет.
+onLanguageChange(() => {
+  applyLanguage();
+  hud.refreshLanguage();
+  screens.refreshLanguage();
+});
 
 function resize() {
   const winW = window.innerWidth;
@@ -4761,7 +5204,7 @@ function startLevel(id) {
   rebuildLayout();
   updateHud();
   hud.setLevel(id);
-  platform.gameplayStart();
+  platform.gameplayStart(levelInfo());
 }
 
 function updateHud() {
@@ -4772,6 +5215,11 @@ function updateHud() {
     extraPostUsed: app.extraPostUsed,
     canUndo: canUndo(app.history)
   });
+}
+
+// Площадка принимает необязательные world и level: режим и номер уровня.
+function levelInfo() {
+  return { world: app.mode, level: String(app.level) };
 }
 
 function startGame(mode) {
@@ -4790,8 +5238,10 @@ function startGame(mode) {
 
 // Экран выбора режима: на каждой карточке настоящий город этого режима.
 function openMenu() {
+  // Пауза геймплея — только если он шёл: на загрузке и после победы
+  // отправлять её нечего, уровень уже закрыт своим сообщением.
+  if (app.screen === 'game') platform.gameplayStop(levelInfo());
   app.screen = 'menu';
-  platform.gameplayStop();
   hud.hide();
   const states = {};
   const rect = { x: 0, y: 0, width: THUMB_WIDTH, height: THUMB_HEIGHT };
@@ -5234,7 +5684,7 @@ function checkWin() {
   // Дом за пройденный уровень ещё летит — экран победы подождёт его.
   if (app.rewards.length > 0 || app.drops.length > 0) return;
   app.winning = true;
-  platform.gameplayStop();
+  platform.gameplayComplete(levelInfo());
   sfx.playWin();
   app.progress.level = Math.max(app.progress.level, app.level + 1);
   const medal = medalFor(app.mode, app.progress.level);
@@ -5293,7 +5743,7 @@ async function nextLevel() {
   if (platform.canShowInterstitial(app.level)) {
     sfx.setMuted(true);
     await platform.showInterstitial(app.level);
-    sfx.setMuted(app.settings.muted);
+    applyMute();
   }
   app.screen = 'game';
   hud.show();
@@ -5350,7 +5800,7 @@ async function requestHint() {
   // Ищем до оплаты: честный отказ не должен стоить игроку попытки или ролика.
   const move = findHint(app.state.posts, app.state.capacity);
   if (!move) {
-    screens.toast('Отсюда подсказка не поможет — попробуй отменить ход');
+    screens.toast(t('toast.hintStuck'));
     return;
   }
   if (app.hintsUsed >= modeConfig(app.mode).free.hint && !(await earnReward())) return;
@@ -5376,8 +5826,8 @@ async function requestExtraPost() {
 async function earnReward() {
   sfx.setMuted(true);
   const rewarded = await platform.showRewarded();
-  sfx.setMuted(app.settings.muted);
-  if (!rewarded) screens.toast('Награда не получена');
+  applyMute();
+  if (!rewarded) screens.toast(t('toast.rewardFailed'));
   return rewarded;
 }
 
@@ -5455,7 +5905,7 @@ async function restore() {
   });
   app.city = app.cities[app.mode];
   app.progress.level = app.slots[app.mode].level;
-  sfx.setMuted(app.settings.muted);
+  applyMute();
 }
 
 // Слот режима из сохранения. Прогресс до режимов переносится в средний:
@@ -5479,7 +5929,8 @@ function readSlot(data, mode) {
 // --- цикл -----------------------------------------------------------------
 
 function frame(now) {
-  const dt = Math.min(MAX_DELTA, now - app.time || 0);
+  const dt = skipDelta ? 0 : Math.min(MAX_DELTA, now - app.time || 0);
+  skipDelta = false;
   app.time = now;
   if (!app.paused) {
     updateTweens(app.tweens, dt);
@@ -5576,22 +6027,37 @@ window.addEventListener('keydown', (event) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  setPaused(document.hidden);
+  setPauseReason('hidden', document.hidden);
 });
 // Потеря фокуса окна тоже паузит звук и цикл (§1.3): вкладка может остаться
 // видимой, но неактивной — visibilitychange тогда не срабатывает.
-window.addEventListener('blur', () => setPaused(true));
-window.addEventListener('focus', () => setPaused(false));
+window.addEventListener('blur', () => setPauseReason('blur', true));
+window.addEventListener('focus', () => setPauseReason('blur', false));
 
 window.addEventListener('message', (event) => {
-  if (event.data === 'game_api_pause') setPaused(true);
-  if (event.data === 'game_api_resume') setPaused(false);
+  if (event.data === 'game_api_pause') setPauseReason('host', true);
+  if (event.data === 'game_api_resume') setPauseReason('host', false);
 });
 
-function setPaused(paused) {
+// Паузу просят четверо: вкладка ушла в фон, окно потеряло фокус, площадка
+// прислала своё событие, хост — postMessage. Игра стоит, пока держится
+// хотя бы одна причина: иначе площадка сняла бы паузу у свёрнутой вкладки.
+const pauseReasons = { hidden: false, blur: false, platform: false, host: false };
+
+function setPauseReason(reason, active) {
+  pauseReasons[reason] = active;
+  const paused = Object.keys(pauseReasons).some((key) => pauseReasons[key]);
+  if (paused === app.paused) return;
   app.paused = paused;
-  if (paused) sfx.suspendAudio();
-  else sfx.resumeAudio();
+  if (paused) {
+    sfx.suspendAudio();
+  } else {
+    sfx.resumeAudio();
+    // Пока игра стояла, requestAnimationFrame мог не вызываться вовсе.
+    // Первый кадр после возобновления идёт с нулевой дельтой, иначе
+    // твины прыгнут вперёд на весь накопленный простой.
+    skipDelta = true;
+  }
 }
 
 // --- старт ----------------------------------------------------------------
@@ -5601,10 +6067,14 @@ async function boot() {
   resize();
   screens.setProgress(0.35);
   await platform.initPlatform();
-  // Язык площадки применяем до первого показа UI (§2.14). Поддержан только
-  // русский, поэтому детект лишь подтверждает язык интерфейса, а не
-  // переключает его — системы локализации в игре нет.
-  applyLanguage(platform.language());
+  platform.onAudioState((enabled) => {
+    platformAudio = enabled;
+    applyMute();
+  });
+  platform.onPauseState((paused) => setPauseReason('platform', paused));
+  // Язык определяем до первого показа UI (§2.14): выбор игрока, затем язык
+  // площадки, затем язык браузера.
+  initLanguage(platform.language());
   screens.setProgress(0.6);
   await restore();
   sfx.initAudio();

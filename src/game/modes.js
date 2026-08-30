@@ -35,11 +35,13 @@ const CURVES = {
   ]
 };
 
+// Название и подпись режима лежат ключами: строки живут в словаре,
+// игровой модуль о языке не знает.
 export const MODES = {
   easy: {
     id: 'easy',
-    title: 'Лёгкий',
-    note: 'Три цвета, много места',
+    titleKey: 'mode.easy.title',
+    noteKey: 'mode.easy.note',
     material: 'wood',
     shuffleFactor: 0.8,
     // Первые уровни — обучение без текста, они решаются за два-три хода.
@@ -49,8 +51,8 @@ export const MODES = {
   },
   normal: {
     id: 'normal',
-    title: 'Средний',
-    note: 'Ровный подъём до семи цветов',
+    titleKey: 'mode.normal.title',
+    noteKey: 'mode.normal.note',
     material: 'stone',
     shuffleFactor: 1,
     tutorial: true,
@@ -59,8 +61,8 @@ export const MODES = {
   },
   hard: {
     id: 'hard',
-    title: 'Сложный',
-    note: 'Семь цветов, один запасной столбик',
+    titleKey: 'mode.hard.title',
+    noteKey: 'mode.hard.note',
     material: 'glass',
     shuffleFactor: 1.35,
     // В сложном обучения нет: первый уровень сразу настоящий.

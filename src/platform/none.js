@@ -7,8 +7,9 @@ export function createNoneAdapter() {
   return {
     name: 'none',
     async init() {},
+    // Заглушка своего языка не имеет: пусть решает выбор игрока и браузер.
     language() {
-      return 'ru';
+      return '';
     },
     ready() {},
     gameplayStart() {},

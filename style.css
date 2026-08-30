@@ -395,3 +395,34 @@ html, body {
   .mode-title { font-size: 15px; }
   .tool { font-size: 10px; padding: 6px 4px 5px; }
 }
+
+/* Переключатель языка живёт в строке настроек: сама строка не кнопка,
+   кликаются только RU и EN. */
+.toggle-static { cursor: default; }
+
+.lang-switch { display: flex; gap: 6px; }
+
+.lang-option {
+  min-width: 40px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(154, 123, 82, 0.18);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.lang-option.active {
+  background: var(--wood);
+  color: #FBF6EC;
+  opacity: 1;
+}
+
+/* Логотип на загрузке ждёт определения языка: мост асинхронный, и без этого
+   «Кубоград» успевал мигнуть перед «Kubograd». */
+#screen-loading .logo { opacity: 0; }
+html.lang-ready #screen-loading .logo { opacity: 1; transition: opacity 0.15s ease; }

@@ -21,6 +21,7 @@ import { createHud } from './ui/hud.js';
 import { createScreens } from './ui/screens.js';
 import { createDebug } from './ui/debug.js';
 import * as platform from './platform/sdk.js';
+import { t, initLanguage, getLanguage, onLanguageChange } from './i18n.js';
 
 const LIFT_MS = 120;
 const BOB_AMPLITUDE = 3;
@@ -177,7 +178,7 @@ const screens = createScreens({
   },
   toggleSound: () => {
     app.settings.muted = !app.settings.muted;
-    sfx.setMuted(app.settings.muted);
+    applyMute();
     screens.showSettings(app.settings, app.screen === 'game');
   },
   toggleVibro: () => {
@@ -196,17 +197,44 @@ const screens = createScreens({
   }
 });
 
+// Звук выключен, если так решил игрок или так требует площадка.
+let platformAudio = true;
+// Первый кадр после паузы не должен нести накопленное время простоя.
+let skipDelta = false;
+function applyMute() {
+  sfx.setMuted(app.settings.muted || !platformAudio);
+}
+
 function vibrate(ms) {
   if (!app.settings.vibro || !navigator.vibrate) return;
   navigator.vibrate(ms);
 }
 
-// Игра одноязычная: поддержан только русский. Язык из SDK читается, чтобы
-// выставить корректный lang документа; неподдержанный язык откатывается на ru.
-const SUPPORTED_LANGS = ['ru'];
-function applyLanguage(lang) {
-  document.documentElement.lang = SUPPORTED_LANGS.includes(lang) ? lang : 'ru';
+const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+
+// Единственное место, где язык встречается с DOM: атрибут lang, заголовок
+// вкладки и все статические подписи из разметки.
+function applyLanguage() {
+  document.documentElement.lang = getLanguage();
+  // Логотип на загрузке ждал именно этого момента.
+  document.documentElement.classList.add('lang-ready');
+  document.title = t('app.title');
+  if (appTitle) appTitle.setAttribute('content', t('app.title'));
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-aria]').forEach((node) => {
+    node.setAttribute('aria-label', t(node.dataset.i18nAria));
+  });
 }
+
+// Смена языка на лету: статика из разметки, счётчик ходов и открытый экран.
+// Сцену трогать не нужно — в канвасе текста нет.
+onLanguageChange(() => {
+  applyLanguage();
+  hud.refreshLanguage();
+  screens.refreshLanguage();
+});
 
 function resize() {
   const winW = window.innerWidth;
@@ -286,7 +314,7 @@ function startLevel(id) {
   rebuildLayout();
   updateHud();
   hud.setLevel(id);
-  platform.gameplayStart();
+  platform.gameplayStart(levelInfo());
 }
 
 function updateHud() {
@@ -297,6 +325,11 @@ function updateHud() {
     extraPostUsed: app.extraPostUsed,
     canUndo: canUndo(app.history)
   });
+}
+
+// Площадка принимает необязательные world и level: режим и номер уровня.
+function levelInfo() {
+  return { world: app.mode, level: String(app.level) };
 }
 
 function startGame(mode) {
@@ -315,8 +348,10 @@ function startGame(mode) {
 
 // Экран выбора режима: на каждой карточке настоящий город этого режима.
 function openMenu() {
+  // Пауза геймплея — только если он шёл: на загрузке и после победы
+  // отправлять её нечего, уровень уже закрыт своим сообщением.
+  if (app.screen === 'game') platform.gameplayStop(levelInfo());
   app.screen = 'menu';
-  platform.gameplayStop();
   hud.hide();
   const states = {};
   const rect = { x: 0, y: 0, width: THUMB_WIDTH, height: THUMB_HEIGHT };
@@ -759,7 +794,7 @@ function checkWin() {
   // Дом за пройденный уровень ещё летит — экран победы подождёт его.
   if (app.rewards.length > 0 || app.drops.length > 0) return;
   app.winning = true;
-  platform.gameplayStop();
+  platform.gameplayComplete(levelInfo());
   sfx.playWin();
   app.progress.level = Math.max(app.progress.level, app.level + 1);
   const medal = medalFor(app.mode, app.progress.level);
@@ -818,7 +853,7 @@ async function nextLevel() {
   if (platform.canShowInterstitial(app.level)) {
     sfx.setMuted(true);
     await platform.showInterstitial(app.level);
-    sfx.setMuted(app.settings.muted);
+    applyMute();
   }
   app.screen = 'game';
   hud.show();
@@ -875,7 +910,7 @@ async function requestHint() {
   // Ищем до оплаты: честный отказ не должен стоить игроку попытки или ролика.
   const move = findHint(app.state.posts, app.state.capacity);
   if (!move) {
-    screens.toast('Отсюда подсказка не поможет — попробуй отменить ход');
+    screens.toast(t('toast.hintStuck'));
     return;
   }
   if (app.hintsUsed >= modeConfig(app.mode).free.hint && !(await earnReward())) return;
@@ -901,8 +936,8 @@ async function requestExtraPost() {
 async function earnReward() {
   sfx.setMuted(true);
   const rewarded = await platform.showRewarded();
-  sfx.setMuted(app.settings.muted);
-  if (!rewarded) screens.toast('Награда не получена');
+  applyMute();
+  if (!rewarded) screens.toast(t('toast.rewardFailed'));
   return rewarded;
 }
 
@@ -980,7 +1015,7 @@ async function restore() {
   });
   app.city = app.cities[app.mode];
   app.progress.level = app.slots[app.mode].level;
-  sfx.setMuted(app.settings.muted);
+  applyMute();
 }
 
 // Слот режима из сохранения. Прогресс до режимов переносится в средний:
@@ -1004,7 +1039,8 @@ function readSlot(data, mode) {
 // --- цикл -----------------------------------------------------------------
 
 function frame(now) {
-  const dt = Math.min(MAX_DELTA, now - app.time || 0);
+  const dt = skipDelta ? 0 : Math.min(MAX_DELTA, now - app.time || 0);
+  skipDelta = false;
   app.time = now;
   if (!app.paused) {
     updateTweens(app.tweens, dt);
@@ -1101,22 +1137,37 @@ window.addEventListener('keydown', (event) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  setPaused(document.hidden);
+  setPauseReason('hidden', document.hidden);
 });
 // Потеря фокуса окна тоже паузит звук и цикл (§1.3): вкладка может остаться
 // видимой, но неактивной — visibilitychange тогда не срабатывает.
-window.addEventListener('blur', () => setPaused(true));
-window.addEventListener('focus', () => setPaused(false));
+window.addEventListener('blur', () => setPauseReason('blur', true));
+window.addEventListener('focus', () => setPauseReason('blur', false));
 
 window.addEventListener('message', (event) => {
-  if (event.data === 'game_api_pause') setPaused(true);
-  if (event.data === 'game_api_resume') setPaused(false);
+  if (event.data === 'game_api_pause') setPauseReason('host', true);
+  if (event.data === 'game_api_resume') setPauseReason('host', false);
 });
 
-function setPaused(paused) {
+// Паузу просят четверо: вкладка ушла в фон, окно потеряло фокус, площадка
+// прислала своё событие, хост — postMessage. Игра стоит, пока держится
+// хотя бы одна причина: иначе площадка сняла бы паузу у свёрнутой вкладки.
+const pauseReasons = { hidden: false, blur: false, platform: false, host: false };
+
+function setPauseReason(reason, active) {
+  pauseReasons[reason] = active;
+  const paused = Object.keys(pauseReasons).some((key) => pauseReasons[key]);
+  if (paused === app.paused) return;
   app.paused = paused;
-  if (paused) sfx.suspendAudio();
-  else sfx.resumeAudio();
+  if (paused) {
+    sfx.suspendAudio();
+  } else {
+    sfx.resumeAudio();
+    // Пока игра стояла, requestAnimationFrame мог не вызываться вовсе.
+    // Первый кадр после возобновления идёт с нулевой дельтой, иначе
+    // твины прыгнут вперёд на весь накопленный простой.
+    skipDelta = true;
+  }
 }
 
 // --- старт ----------------------------------------------------------------
@@ -1126,10 +1177,14 @@ async function boot() {
   resize();
   screens.setProgress(0.35);
   await platform.initPlatform();
-  // Язык площадки применяем до первого показа UI (§2.14). Поддержан только
-  // русский, поэтому детект лишь подтверждает язык интерфейса, а не
-  // переключает его — системы локализации в игре нет.
-  applyLanguage(platform.language());
+  platform.onAudioState((enabled) => {
+    platformAudio = enabled;
+    applyMute();
+  });
+  platform.onPauseState((paused) => setPauseReason('platform', paused));
+  // Язык определяем до первого показа UI (§2.14): выбор игрока, затем язык
+  // площадки, затем язык браузера.
+  initLanguage(platform.language());
   screens.setProgress(0.6);
   await restore();
   sfx.initAudio();
