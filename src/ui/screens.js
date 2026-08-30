@@ -5,6 +5,13 @@ import { MODE_IDS, MODES, MEDAL_COLORS, LEVEL_COUNT } from '../game/modes.js';
 import { t, getLanguage, setLanguage, LANGS } from '../i18n.js';
 
 const TOAST_MS = 1600;
+
+// Настольные браузеры объявляют navigator.vibrate, но вызов молча игнорируют:
+// одного наличия метода мало. Признак сенсорного ввода отсеивает их — на
+// телефонах и планшетах maxTouchPoints всегда больше нуля.
+function vibrationSupported() {
+  return 'vibrate' in navigator && navigator.maxTouchPoints > 0;
+}
 // Откуда в городе начинается полоса миниатюры.
 const THUMB_TOP = 0.24;
 
@@ -44,7 +51,13 @@ export function createScreens(handlers) {
   document.getElementById('btn-menu-settings').addEventListener('click', handlers.openSettings);
   document.getElementById('btn-close-settings').addEventListener('click', handlers.closeSettings);
   document.getElementById('btn-sound').addEventListener('click', handlers.toggleSound);
-  document.getElementById('btn-vibro').addEventListener('click', handlers.toggleVibro);
+  // Строки для вибрации нет вовсе, если устройство её не умеет: выключенный
+  // переключатель только сбивал бы с толку. Сохранённое значение при этом
+  // не трогаем — на телефоне игрок найдёт настройку такой, как оставил.
+  const vibroRow = document.getElementById('btn-vibro');
+  const hasVibration = vibrationSupported();
+  if (hasVibration) vibroRow.addEventListener('click', handlers.toggleVibro);
+  else vibroRow.classList.add('hidden');
   document.getElementById('btn-reset').addEventListener('click', handlers.resetProgress);
   document.getElementById('btn-restart').addEventListener('click', handlers.restart);
   LANGS.forEach((lang) => {
@@ -110,7 +123,7 @@ export function createScreens(handlers) {
     showSettings(settings, inGame) {
       lastSettings = { settings, inGame };
       soundState.textContent = t(settings.muted ? 'settings.off' : 'settings.on');
-      vibroState.textContent = t(settings.vibro ? 'settings.on' : 'settings.off');
+      if (hasVibration) vibroState.textContent = t(settings.vibro ? 'settings.on' : 'settings.off');
       markLanguage();
       // «Заново» нужен только внутри уровня.
       restartButton.classList.toggle('hidden', !inGame);
