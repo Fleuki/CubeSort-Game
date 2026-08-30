@@ -421,3 +421,8 @@ html, body {
   color: #FBF6EC;
   opacity: 1;
 }
+
+/* Логотип на загрузке ждёт определения языка: мост асинхронный, и без этого
+   «Кубоград» успевал мигнуть перед «Kubograd». */
+#screen-loading .logo { opacity: 0; }
+html.lang-ready #screen-loading .logo { opacity: 1; transition: opacity 0.15s ease; }

@@ -437,7 +437,16 @@ html, body {
   opacity: 1;
 }
 
+/* Логотип на загрузке ждёт определения языка: мост асинхронный, и без этого
+   «Кубоград» успевал мигнуть перед «Kubograd». */
+#screen-loading .logo { opacity: 0; }
+html.lang-ready #screen-loading .logo { opacity: 1; transition: opacity 0.15s ease; }
+
 </style>
+<!-- SDK площадки — единственный внешний запрос, разрешённый правилом 7.
+     Не async и не defer: window.bridge должен существовать к запуску модуля.
+     Если скрипт не загрузился, detectAdapter() уходит на заглушку. -->
+<script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>
 </head>
 <body>
 <canvas id="scene"></canvas>
@@ -4577,108 +4586,156 @@ function createYandexAdapter() {
 return { createYandexAdapter };
 })();
 const __src_platform_playgama_js = (() => {
-// Реализация фасада под Playgama Bridge. Подключается тем же способом,
-// что и Яндекс: только когда мост реально присутствует на странице.
+// Реализация фасада под Playgama Bridge v2. Все имена методов и значения
+// состояний — из документации моста, не из головы:
+// https://wiki.playgama.com/playgama/bridge-sdk/api
+// Модули моста (platform, storage, advertisement) недоступны до
+// bridge.initialize() — обращаться к ним раньше нельзя, SDK ругается в консоль.
 
-const LOCAL_KEY = 'cubesort.save';
 const SAVE_KEY = 'save';
+// Зеркало сейва: тот же ключ, что у заглушки и Яндекса, — иначе прогресс
+// сессии, отработавшей без моста, потеряется при следующем заходе.
+const LOCAL_KEY = 'cubesort.save';
+// platform.id в окружении, которое мост не поддерживает: локальный запуск,
+// GitHub Pages. Играем там как без SDK.
+const MOCK_PLATFORM = 'mock';
+
+const INTERSTITIAL_CLOSED = 'closed';
+const INTERSTITIAL_FAILED = 'failed';
+const REWARDED_REWARDED = 'rewarded';
+const REWARDED_CLOSED = 'closed';
+const REWARDED_FAILED = 'failed';
 
 function createPlaygamaAdapter() {
   const bridge = window.bridge;
-  let lang = 'ru';
+  let lang = '';
+  let platformId = '';
+
+  function events() {
+    return (bridge && bridge.EVENT_NAME) || {};
+  }
 
   return {
     name: 'playgama',
     async init() {
-      if (bridge && bridge.initialize) await bridge.initialize();
-      // Язык моста читаем до UI — симметрично Яндексу (§2.14).
-      try {
-        lang = (bridge && bridge.platform && bridge.platform.language) || 'ru';
-      } catch (error) {
-        lang = 'ru';
-      }
+      await bridge.initialize();
+      platformId = bridge.platform.id || '';
+      // Язык моста: площадка, а если она молчит — язык браузера. Пустую
+      // строку отдаём как «неизвестно», чтобы решал i18n.
+      lang = bridge.platform.language || '';
+    },
+    // Мост поднялся, но настоящей площадки за ним нет.
+    isMock() {
+      return platformId === MOCK_PLATFORM;
     },
     language() {
       return lang;
     },
+    isAudioEnabled() {
+      return bridge.platform.isAudioEnabled !== false;
+    },
+    // Площадка вправе потребовать тишины — например, когда игрок ушёл
+    // на другую вкладку портала.
+    onAudioStateChanged(listener) {
+      bridge.platform.on(events().AUDIO_STATE_CHANGED, (enabled) => listener(enabled !== false));
+    },
     ready() {
-      if (bridge && bridge.platform && bridge.platform.sendMessage) {
-        bridge.platform.sendMessage('game_ready');
-      }
+      bridge.platform.sendMessage('game_ready');
     },
     gameplayStart() {
-      if (bridge && bridge.platform && bridge.platform.sendMessage) {
-        bridge.platform.sendMessage('gameplay_started');
-      }
+      bridge.platform.sendMessage('level_started');
     },
     gameplayStop() {
-      if (bridge && bridge.platform && bridge.platform.sendMessage) {
-        bridge.platform.sendMessage('gameplay_stopped');
-      }
+      bridge.platform.sendMessage('level_paused');
     },
     showAd() {
-      if (!bridge || !bridge.advertisement) return Promise.resolve(false);
+      const ads = bridge.advertisement;
+      if (!ads) return Promise.resolve(false);
       return new Promise((resolve) => {
+        const name = events().INTERSTITIAL_STATE_CHANGED;
         const handler = (state) => {
-          if (state === 'closed' || state === 'failed') {
-            bridge.advertisement.off('interstitial_state_changed', handler);
-            resolve(state === 'closed');
-          }
+          if (state !== INTERSTITIAL_CLOSED && state !== INTERSTITIAL_FAILED) return;
+          ads.off(name, handler);
+          resolve(state === INTERSTITIAL_CLOSED);
         };
-        bridge.advertisement.on('interstitial_state_changed', handler);
-        bridge.advertisement.showInterstitial();
+        ads.on(name, handler);
+        ads.showInterstitial();
       });
     },
     showRewarded() {
-      if (!bridge || !bridge.advertisement) return Promise.resolve(false);
+      const ads = bridge.advertisement;
+      if (!ads) return Promise.resolve(false);
       return new Promise((resolve) => {
+        const name = events().REWARDED_STATE_CHANGED;
         let rewarded = false;
         const handler = (state) => {
-          if (state === 'rewarded') rewarded = true;
-          if (state === 'closed' || state === 'failed') {
-            bridge.advertisement.off('rewarded_state_changed', handler);
-            resolve(rewarded);
-          }
+          // Награда только по 'rewarded': на 'closed' игрок получил бы её,
+          // не досмотрев ролик.
+          if (state === REWARDED_REWARDED) rewarded = true;
+          if (state !== REWARDED_CLOSED && state !== REWARDED_FAILED) return;
+          ads.off(name, handler);
+          resolve(rewarded);
         };
-        bridge.advertisement.on('rewarded_state_changed', handler);
-        bridge.advertisement.showRewarded();
+        ads.on(name, handler);
+        ads.showRewarded();
       });
     },
+    // storage.set принимает два массива — ключи и значения.
     async save(data) {
-      if (bridge && bridge.storage) {
-        try {
-          await bridge.storage.set(SAVE_KEY, data);
-          return;
-        } catch (error) {
-          // Падаем на localStorage.
-        }
-      }
+      writeLocal(data);
       try {
-        localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+        await bridge.storage.set([SAVE_KEY], [data]);
       } catch (error) {
-        // Ничего не поделать.
+        // Облако недоступно — прогресс остался в зеркале.
       }
     },
+    // storage.get возвращает массив в порядке запрошенных ключей,
+    // null за отсутствующий ключ.
     async load() {
-      if (bridge && bridge.storage) {
-        try {
-          const data = await bridge.storage.get(SAVE_KEY);
-          if (data) return data;
-        } catch (error) {
-          // Падаем на localStorage.
-        }
-      }
-      try {
-        const raw = localStorage.getItem(LOCAL_KEY);
-        return raw ? JSON.parse(raw) : null;
-      } catch (error) {
-        return null;
-      }
+      const cloud = await readCloud(bridge);
+      const local = readLocal();
+      if (!cloud) return local;
+      if (!local) return cloud;
+      // Сессия без моста писала только в зеркало. Если оно свежее облака,
+      // поднимаем его вперёд — иначе прогресс той сессии откатится.
+      return stampOf(local) > stampOf(cloud) ? local : cloud;
     }
   };
 }
 
-return { createPlaygamaAdapter };
+async function readCloud(bridge) {
+  try {
+    const data = await bridge.storage.get([SAVE_KEY]);
+    return (Array.isArray(data) ? data[0] : data) || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function readLocal() {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeLocal(data) {
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+  } catch (error) {
+    // Приватный режим режет localStorage — облако всё равно основное.
+  }
+}
+
+// Сохранения до появления штампа считаем самыми старыми: при равенстве
+// выигрывает облако.
+function stampOf(data) {
+  return data && typeof data.savedAt === 'number' ? data.savedAt : 0;
+}
+
+return { MOCK_PLATFORM, createPlaygamaAdapter };
 })();
 const __src_platform_sdk_js = (() => {
 // Единый фасад площадок. Игра знает только про эти методы,
@@ -4690,26 +4747,58 @@ const { createPlaygamaAdapter } = __src_platform_playgama_js;
 
 const INTERSTITIAL_COOLDOWN_MS = 180000;
 const FIRST_AD_LEVEL = 3;
+// Дольше игрок ждать не должен: если SDK не поднялся за это время,
+// уходим на заглушку и играем без площадки.
+const INIT_TIMEOUT_MS = 5000;
 
 let adapter = createNoneAdapter();
 let lastInterstitial = 0;
+let audioListener = null;
 
+// Яндекс проверяется первым: под него написан отдельный адаптер по
+// требованиям гайда, и мост его подменять не должен.
 function detectAdapter() {
-  if (window.bridge && window.bridge.platform) return createPlaygamaAdapter();
   const host = window.location.hostname || '';
   if (window.YaGames || host.includes('yandex') || host.includes('games.s3')) return createYandexAdapter();
+  // Признак моста — только метод initialize. Трогать bridge.platform до
+  // инициализации нельзя: SDK возвращает undefined и пишет ошибку в консоль.
+  if (window.bridge && typeof window.bridge.initialize === 'function') return createPlaygamaAdapter();
   return createNoneAdapter();
 }
 
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('platform init timeout')), ms);
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
 async function initPlatform() {
-  adapter = detectAdapter();
+  const candidate = detectAdapter();
+  adapter = candidate;
   try {
-    await adapter.init();
+    await withTimeout(Promise.resolve(candidate.init()), INIT_TIMEOUT_MS);
+    // Мост поднялся, но площадки за ним нет (локальный запуск, GitHub Pages):
+    // ведём себя ровно так, как будто SDK не подключали.
+    if (candidate.isMock && candidate.isMock()) adapter = createNoneAdapter();
   } catch (error) {
     // Если SDK не поднялся, играем без него — это не повод падать.
     adapter = createNoneAdapter();
   }
+  if (audioListener) bindAudio();
   return adapter.name;
+}
+
+// Площадка может запретить звук — тогда игра молчит независимо от настройки
+// игрока. Слушателя ставим один раз, до и после выбора адаптера.
+function bindAudio() {
+  if (adapter.onAudioStateChanged) adapter.onAudioStateChanged(audioListener);
+  audioListener(adapter.isAudioEnabled ? adapter.isAudioEnabled() : true);
+}
+
+function onAudioState(listener) {
+  audioListener = listener;
+  bindAudio();
 }
 
 function platformName() {
@@ -4750,15 +4839,17 @@ async function showRewarded() {
   return adapter.showRewarded();
 }
 
+// Штамп времени ставит фасад, а не игра: по нему адаптер площадки решает,
+// что свежее — облако или локальное зеркало.
 async function save(data) {
-  return adapter.save(data);
+  return adapter.save({ ...data, savedAt: Date.now() });
 }
 
 async function load() {
   return adapter.load();
 }
 
-return { initPlatform, platformName, language, ready, gameplayStart, gameplayStop, canShowInterstitial, showInterstitial, showRewarded, save, load };
+return { initPlatform, onAudioState, platformName, language, ready, gameplayStart, gameplayStop, canShowInterstitial, showInterstitial, showRewarded, save, load };
 })();
 const __src_main_js = (() => {
 // Точка входа: игровой цикл, ввод и склейка модулей.
@@ -4941,7 +5032,7 @@ const screens = createScreens({
   },
   toggleSound: () => {
     app.settings.muted = !app.settings.muted;
-    sfx.setMuted(app.settings.muted);
+    applyMute();
     screens.showSettings(app.settings, app.screen === 'game');
   },
   toggleVibro: () => {
@@ -4960,6 +5051,12 @@ const screens = createScreens({
   }
 });
 
+// Звук выключен, если так решил игрок или так требует площадка.
+let platformAudio = true;
+function applyMute() {
+  sfx.setMuted(app.settings.muted || !platformAudio);
+}
+
 function vibrate(ms) {
   if (!app.settings.vibro || !navigator.vibrate) return;
   navigator.vibrate(ms);
@@ -4971,6 +5068,8 @@ const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]
 // вкладки и все статические подписи из разметки.
 function applyLanguage() {
   document.documentElement.lang = getLanguage();
+  // Логотип на загрузке ждал именно этого момента.
+  document.documentElement.classList.add('lang-ready');
   document.title = t('app.title');
   if (appTitle) appTitle.setAttribute('content', t('app.title'));
   document.querySelectorAll('[data-i18n]').forEach((node) => {
@@ -5599,7 +5698,7 @@ async function nextLevel() {
   if (platform.canShowInterstitial(app.level)) {
     sfx.setMuted(true);
     await platform.showInterstitial(app.level);
-    sfx.setMuted(app.settings.muted);
+    applyMute();
   }
   app.screen = 'game';
   hud.show();
@@ -5682,7 +5781,7 @@ async function requestExtraPost() {
 async function earnReward() {
   sfx.setMuted(true);
   const rewarded = await platform.showRewarded();
-  sfx.setMuted(app.settings.muted);
+  applyMute();
   if (!rewarded) screens.toast(t('toast.rewardFailed'));
   return rewarded;
 }
@@ -5761,7 +5860,7 @@ async function restore() {
   });
   app.city = app.cities[app.mode];
   app.progress.level = app.slots[app.mode].level;
-  sfx.setMuted(app.settings.muted);
+  applyMute();
 }
 
 // Слот режима из сохранения. Прогресс до режимов переносится в средний:
@@ -5907,6 +6006,10 @@ async function boot() {
   resize();
   screens.setProgress(0.35);
   await platform.initPlatform();
+  platform.onAudioState((enabled) => {
+    platformAudio = enabled;
+    applyMute();
+  });
   // Язык определяем до первого показа UI (§2.14): выбор игрока, затем язык
   // площадки, затем язык браузера.
   initLanguage(platform.language());

@@ -178,7 +178,7 @@ const screens = createScreens({
   },
   toggleSound: () => {
     app.settings.muted = !app.settings.muted;
-    sfx.setMuted(app.settings.muted);
+    applyMute();
     screens.showSettings(app.settings, app.screen === 'game');
   },
   toggleVibro: () => {
@@ -197,6 +197,12 @@ const screens = createScreens({
   }
 });
 
+// Звук выключен, если так решил игрок или так требует площадка.
+let platformAudio = true;
+function applyMute() {
+  sfx.setMuted(app.settings.muted || !platformAudio);
+}
+
 function vibrate(ms) {
   if (!app.settings.vibro || !navigator.vibrate) return;
   navigator.vibrate(ms);
@@ -208,6 +214,8 @@ const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]
 // вкладки и все статические подписи из разметки.
 function applyLanguage() {
   document.documentElement.lang = getLanguage();
+  // Логотип на загрузке ждал именно этого момента.
+  document.documentElement.classList.add('lang-ready');
   document.title = t('app.title');
   if (appTitle) appTitle.setAttribute('content', t('app.title'));
   document.querySelectorAll('[data-i18n]').forEach((node) => {
@@ -836,7 +844,7 @@ async function nextLevel() {
   if (platform.canShowInterstitial(app.level)) {
     sfx.setMuted(true);
     await platform.showInterstitial(app.level);
-    sfx.setMuted(app.settings.muted);
+    applyMute();
   }
   app.screen = 'game';
   hud.show();
@@ -919,7 +927,7 @@ async function requestExtraPost() {
 async function earnReward() {
   sfx.setMuted(true);
   const rewarded = await platform.showRewarded();
-  sfx.setMuted(app.settings.muted);
+  applyMute();
   if (!rewarded) screens.toast(t('toast.rewardFailed'));
   return rewarded;
 }
@@ -998,7 +1006,7 @@ async function restore() {
   });
   app.city = app.cities[app.mode];
   app.progress.level = app.slots[app.mode].level;
-  sfx.setMuted(app.settings.muted);
+  applyMute();
 }
 
 // Слот режима из сохранения. Прогресс до режимов переносится в средний:
@@ -1144,6 +1152,10 @@ async function boot() {
   resize();
   screens.setProgress(0.35);
   await platform.initPlatform();
+  platform.onAudioState((enabled) => {
+    platformAudio = enabled;
+    applyMute();
+  });
   // Язык определяем до первого показа UI (§2.14): выбор игрока, затем язык
   // площадки, затем язык браузера.
   initLanguage(platform.language());
