@@ -423,6 +423,6 @@ html, body {
 }
 
 /* Логотип на загрузке ждёт определения языка: мост асинхронный, и без этого
-   «Кубоград» успевал мигнуть перед «Kubograd». */
+   «Кубоград» успевал мигнуть перед «Cubetown». */
 #screen-loading .logo { opacity: 0; }
 html.lang-ready #screen-loading .logo { opacity: 1; transition: opacity 0.15s ease; }
