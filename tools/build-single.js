@@ -13,6 +13,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Порядок важен: модуль должен идти после всех, кого импортирует.
 const MODULES = [
+  'src/i18n.js',
   'levels/levels-easy.js',
   'levels/levels-normal.js',
   'levels/levels-hard.js',

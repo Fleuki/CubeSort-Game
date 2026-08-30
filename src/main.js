@@ -21,6 +21,7 @@ import { createHud } from './ui/hud.js';
 import { createScreens } from './ui/screens.js';
 import { createDebug } from './ui/debug.js';
 import * as platform from './platform/sdk.js';
+import { t, initLanguage, getLanguage, onLanguageChange } from './i18n.js';
 
 const LIFT_MS = 120;
 const BOB_AMPLITUDE = 3;
@@ -201,12 +202,29 @@ function vibrate(ms) {
   navigator.vibrate(ms);
 }
 
-// Игра одноязычная: поддержан только русский. Язык из SDK читается, чтобы
-// выставить корректный lang документа; неподдержанный язык откатывается на ru.
-const SUPPORTED_LANGS = ['ru'];
-function applyLanguage(lang) {
-  document.documentElement.lang = SUPPORTED_LANGS.includes(lang) ? lang : 'ru';
+const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+
+// Единственное место, где язык встречается с DOM: атрибут lang, заголовок
+// вкладки и все статические подписи из разметки.
+function applyLanguage() {
+  document.documentElement.lang = getLanguage();
+  document.title = t('app.title');
+  if (appTitle) appTitle.setAttribute('content', t('app.title'));
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-aria]').forEach((node) => {
+    node.setAttribute('aria-label', t(node.dataset.i18nAria));
+  });
 }
+
+// Смена языка на лету: статика из разметки, счётчик ходов и открытый экран.
+// Сцену трогать не нужно — в канвасе текста нет.
+onLanguageChange(() => {
+  applyLanguage();
+  hud.refreshLanguage();
+  screens.refreshLanguage();
+});
 
 function resize() {
   const winW = window.innerWidth;
@@ -875,7 +893,7 @@ async function requestHint() {
   // Ищем до оплаты: честный отказ не должен стоить игроку попытки или ролика.
   const move = findHint(app.state.posts, app.state.capacity);
   if (!move) {
-    screens.toast('Отсюда подсказка не поможет — попробуй отменить ход');
+    screens.toast(t('toast.hintStuck'));
     return;
   }
   if (app.hintsUsed >= modeConfig(app.mode).free.hint && !(await earnReward())) return;
@@ -902,7 +920,7 @@ async function earnReward() {
   sfx.setMuted(true);
   const rewarded = await platform.showRewarded();
   sfx.setMuted(app.settings.muted);
-  if (!rewarded) screens.toast('Награда не получена');
+  if (!rewarded) screens.toast(t('toast.rewardFailed'));
   return rewarded;
 }
 
@@ -1126,10 +1144,9 @@ async function boot() {
   resize();
   screens.setProgress(0.35);
   await platform.initPlatform();
-  // Язык площадки применяем до первого показа UI (§2.14). Поддержан только
-  // русский, поэтому детект лишь подтверждает язык интерфейса, а не
-  // переключает его — системы локализации в игре нет.
-  applyLanguage(platform.language());
+  // Язык определяем до первого показа UI (§2.14): выбор игрока, затем язык
+  // площадки, затем язык браузера.
+  initLanguage(platform.language());
   screens.setProgress(0.6);
   await restore();
   sfx.initAudio();

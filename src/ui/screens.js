@@ -2,6 +2,7 @@
 // Миниатюры городов на карточках рисует город — здесь только вставка.
 
 import { MODE_IDS, MODES, MEDAL_COLORS, LEVEL_COUNT } from '../game/modes.js';
+import { t, getLanguage, setLanguage, LANGS } from '../i18n.js';
 
 const TOAST_MS = 1600;
 // Откуда в городе начинается полоса миниатюры.
@@ -31,7 +32,13 @@ export function createScreens(handlers) {
   const vibroState = document.getElementById('vibro-state');
   const toast = document.getElementById('toast');
   const restartButton = document.getElementById('btn-restart');
+  const langButtons = {};
   let toastTimer = 0;
+  // Последние показанные данные: смена языка перерисовывает экран из них,
+  // не требуя от вызывающего кода повторять аргументы.
+  let lastMenu = null;
+  let lastWin = null;
+  let lastSettings = null;
 
   document.getElementById('btn-next').addEventListener('click', handlers.next);
   document.getElementById('btn-menu-settings').addEventListener('click', handlers.openSettings);
@@ -40,6 +47,19 @@ export function createScreens(handlers) {
   document.getElementById('btn-vibro').addEventListener('click', handlers.toggleVibro);
   document.getElementById('btn-reset').addEventListener('click', handlers.resetProgress);
   document.getElementById('btn-restart').addEventListener('click', handlers.restart);
+  LANGS.forEach((lang) => {
+    const node = document.getElementById(`btn-lang-${lang}`);
+    if (!node) return;
+    langButtons[lang] = node;
+    node.addEventListener('click', () => setLanguage(lang));
+  });
+
+  function markLanguage() {
+    const active = getLanguage();
+    LANGS.forEach((lang) => {
+      if (langButtons[lang]) langButtons[lang].classList.toggle('active', lang === active);
+    });
+  }
 
   // Миниатюра — вырезка из настоящего города режима: берём полосу
   // с площадкой и застройкой один в один, без растяжения.
@@ -66,12 +86,13 @@ export function createScreens(handlers) {
     // Каждая карточка показывает свой город, свой уровень и медаль за режим.
     showMenu(states) {
       hideAll();
+      lastMenu = states;
       MODE_IDS.forEach((mode) => {
         const card = modeCards[mode];
         const state = states[mode];
         card.progress.textContent = state.started
-          ? `Уровень ${Math.min(state.level, LEVEL_COUNT)} / ${LEVEL_COUNT}`
-          : `${MODES[mode].note} · не начат`;
+          ? t('menu.progress', { n: Math.min(state.level, LEVEL_COUNT), total: LEVEL_COUNT })
+          : t('menu.notStarted', { note: t(MODES[mode].noteKey) });
         // Медаль — кружок в цвет металла, без подписи.
         card.medal.classList.toggle('hidden', !state.medal);
         if (state.medal) card.medal.style.background = MEDAL_COLORS[state.medal];
@@ -81,13 +102,16 @@ export function createScreens(handlers) {
     },
     showWin({ moves, cityCount }) {
       hideAll();
-      winStats.textContent = `Ходов: ${moves}`;
-      winCity.textContent = `Домов в городе: ${cityCount}`;
+      lastWin = { moves, cityCount };
+      winStats.textContent = t('result.moves', { n: moves });
+      winCity.textContent = t('result.city', { n: cityCount });
       nodes.win.classList.remove('hidden');
     },
     showSettings(settings, inGame) {
-      soundState.textContent = settings.muted ? 'выкл' : 'вкл';
-      vibroState.textContent = settings.vibro ? 'вкл' : 'выкл';
+      lastSettings = { settings, inGame };
+      soundState.textContent = t(settings.muted ? 'settings.off' : 'settings.on');
+      vibroState.textContent = t(settings.vibro ? 'settings.on' : 'settings.off');
+      markLanguage();
       // «Заново» нужен только внутри уровня.
       restartButton.classList.toggle('hidden', !inGame);
       nodes.settings.classList.remove('hidden');
@@ -99,6 +123,20 @@ export function createScreens(handlers) {
       return !nodes.settings.classList.contains('hidden');
     },
     hideAll,
+    // Перерисовка после смены языка: молча обновляем то, что уже на экране.
+    // Видимость считаем заранее — showMenu и showWin зовут hideAll и иначе
+    // закрыли бы открытые поверх них настройки.
+    refreshLanguage() {
+      const openMenu = !nodes.menu.classList.contains('hidden');
+      const openWin = !nodes.win.classList.contains('hidden');
+      const openSettings = !nodes.settings.classList.contains('hidden');
+      if (openMenu && lastMenu) this.showMenu(lastMenu);
+      if (openWin && lastWin) this.showWin(lastWin);
+      if (openSettings && lastSettings) {
+        this.showSettings(lastSettings.settings, lastSettings.inGame);
+      }
+      markLanguage();
+    },
     toast(message) {
       toast.textContent = message;
       toast.classList.remove('hidden');

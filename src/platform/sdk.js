@@ -33,9 +33,10 @@ export function platformName() {
   return adapter.name;
 }
 
-// Язык площадки, прочитанный из SDK во время init (§2.14).
+// Язык площадки, прочитанный из SDK во время init (§2.14). Пустая строка
+// означает «площадка языка не назвала» — тогда решает i18n.
 export function language() {
-  return adapter.language ? adapter.language() : 'ru';
+  return adapter.language ? adapter.language() : '';
 }
 
 export function ready() {

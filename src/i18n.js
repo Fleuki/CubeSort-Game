@@ -8,13 +8,13 @@ export const LANGS = ['ru', 'en'];
 export const FALLBACK_LANG = 'en';
 const DEFAULT_LANG = 'ru';
 
-// Название игры не переводится ни при каких условиях: оно обязано
-// побуквенно совпадать во всех материалах стора (GAME_NAME.md).
-const GAME_NAME = 'Кубоград';
+// Название не переводится, а транслитерируется: русская локаль и материалы
+// Яндекс.Игр — строго «Кубоград», международные площадки — «Kubograd».
+// Синонимы-переводы запрещены, подробности в GAME_NAME.md.
 
 export const DICT = {
   ru: {
-    'app.title': GAME_NAME,
+    'app.title': 'Кубоград',
 
     'hud.menu': 'Меню',
     'hud.settings': 'Настройки',
@@ -55,12 +55,12 @@ export const DICT = {
     'toast.rewardFailed': 'Награда не получена'
   },
   en: {
-    'app.title': GAME_NAME,
+    'app.title': 'Kubograd',
 
     'hud.menu': 'Menu',
     'hud.settings': 'Settings',
     'hud.level': 'Level',
-    'hud.moves': 'Moves {n}',
+    'hud.moves': 'Moves: {n}',
     'hud.undo': 'Undo',
     'hud.hint': 'Hint',
     'hud.post': 'Column',
@@ -68,7 +68,7 @@ export const DICT = {
     'menu.note': 'Every mode grows its own city',
     'menu.settings': 'Settings',
     'menu.progress': 'Level {n} / {total}',
-    'menu.notStarted': '{note} · not started',
+    'menu.notStarted': '{note} · New',
 
     'mode.easy.title': 'Easy',
     'mode.easy.note': 'Three colors, plenty of room',

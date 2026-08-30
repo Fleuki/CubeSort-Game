@@ -19,76 +19,83 @@
 
 <div id="hud" class="hud hidden">
   <div class="hud-top">
-    <button class="icon-button" id="btn-menu" type="button" aria-label="Меню">‹</button>
+    <button class="icon-button" id="btn-menu" type="button" data-i18n-aria="hud.menu" aria-label="Меню">‹</button>
     <div class="level-badge">
-      <span class="level-caption">Уровень</span>
+      <span class="level-caption" data-i18n="hud.level">Уровень</span>
       <span id="level-number">1</span>
       <span class="level-goal" id="level-goal"></span>
     </div>
-    <button class="icon-button" id="btn-settings" type="button" aria-label="Настройки">⚙</button>
+    <button class="icon-button" id="btn-settings" type="button" data-i18n-aria="hud.settings" aria-label="Настройки">⚙</button>
   </div>
   <div class="hud-bottom">
     <button class="tool" id="btn-undo" type="button">
-      <span class="tool-icon">↺</span><span class="tool-label">Отменить</span><span class="tool-badge" id="undo-badge">3</span>
+      <span class="tool-icon">↺</span><span class="tool-label" data-i18n="hud.undo">Отменить</span><span class="tool-badge" id="undo-badge">3</span>
     </button>
     <button class="tool" id="btn-hint" type="button">
-      <span class="tool-icon">?</span><span class="tool-label">Подсказка</span><span class="tool-badge" id="hint-badge">2</span>
+      <span class="tool-icon">?</span><span class="tool-label" data-i18n="hud.hint">Подсказка</span><span class="tool-badge" id="hint-badge">2</span>
     </button>
     <button class="tool" id="btn-post" type="button">
-      <span class="tool-icon">+</span><span class="tool-label">Столбик</span><span class="tool-badge" id="post-badge">1</span>
+      <span class="tool-icon">+</span><span class="tool-label" data-i18n="hud.post">Столбик</span><span class="tool-badge" id="post-badge">1</span>
     </button>
   </div>
 </div>
 
 <div id="screen-loading" class="screen">
-  <div class="logo">Кубоград</div>
+  <div class="logo" data-i18n="app.title">Кубоград</div>
   <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
 </div>
 
 <div id="screen-menu" class="screen hidden">
   <div class="menu-card">
-    <div class="logo">Кубоград</div>
-    <p class="menu-note">В каждом режиме свой город</p>
+    <div class="logo" data-i18n="app.title">Кубоград</div>
+    <p class="menu-note" data-i18n="menu.note">В каждом режиме свой город</p>
     <div class="modes" id="mode-list">
       <button class="mode-card" id="mode-easy" type="button" data-mode="easy">
         <canvas class="mode-city" id="mode-city-easy" width="600" height="144"></canvas>
-        <span class="mode-title">Лёгкий<i class="mode-medal hidden" id="mode-medal-easy"></i></span>
-        <span class="mode-progress" id="mode-progress-easy">Не начат</span>
+        <span class="mode-title"><span data-i18n="mode.easy.title">Лёгкий</span><i class="mode-medal hidden" id="mode-medal-easy"></i></span>
+        <span class="mode-progress" id="mode-progress-easy"></span>
       </button>
       <button class="mode-card" id="mode-normal" type="button" data-mode="normal">
         <canvas class="mode-city" id="mode-city-normal" width="600" height="144"></canvas>
-        <span class="mode-title">Средний<i class="mode-medal hidden" id="mode-medal-normal"></i></span>
-        <span class="mode-progress" id="mode-progress-normal">Не начат</span>
+        <span class="mode-title"><span data-i18n="mode.normal.title">Средний</span><i class="mode-medal hidden" id="mode-medal-normal"></i></span>
+        <span class="mode-progress" id="mode-progress-normal"></span>
       </button>
       <button class="mode-card" id="mode-hard" type="button" data-mode="hard">
         <canvas class="mode-city" id="mode-city-hard" width="600" height="144"></canvas>
-        <span class="mode-title">Сложный<i class="mode-medal hidden" id="mode-medal-hard"></i></span>
-        <span class="mode-progress" id="mode-progress-hard">Не начат</span>
+        <span class="mode-title"><span data-i18n="mode.hard.title">Сложный</span><i class="mode-medal hidden" id="mode-medal-hard"></i></span>
+        <span class="mode-progress" id="mode-progress-hard"></span>
       </button>
     </div>
     <div class="menu-row menu-row-end">
-      <button class="link" id="btn-menu-settings" type="button">Настройки</button>
+      <button class="link" id="btn-menu-settings" type="button" data-i18n="menu.settings">Настройки</button>
     </div>
   </div>
 </div>
 
 <div id="screen-win" class="screen hidden">
   <div class="menu-card">
-    <div class="win-title">Уровень пройден</div>
-    <div class="win-stats" id="win-stats">Ходов: 0</div>
-    <div class="win-city" id="win-city">В городе прибавилось домов: 0</div>
-    <button class="primary" id="btn-next" type="button">Далее</button>
+    <div class="win-title" data-i18n="result.title">Уровень пройден</div>
+    <div class="win-stats" id="win-stats"></div>
+    <div class="win-city" id="win-city"></div>
+    <button class="primary" id="btn-next" type="button" data-i18n="result.next">Далее</button>
   </div>
 </div>
 
 <div id="screen-settings" class="screen hidden">
   <div class="menu-card">
-    <div class="win-title">Настройки</div>
-    <button class="toggle" id="btn-restart" type="button">Начать уровень заново<span class="toggle-state">⟳</span></button>
-    <button class="toggle" id="btn-sound" type="button">Звук<span class="toggle-state" id="sound-state">вкл</span></button>
-    <button class="toggle" id="btn-vibro" type="button">Вибрация<span class="toggle-state" id="vibro-state">вкл</span></button>
-    <button class="toggle danger" id="btn-reset" type="button">Сбросить прогресс</button>
-    <button class="primary" id="btn-close-settings" type="button">Закрыть</button>
+    <div class="win-title" data-i18n="settings.title">Настройки</div>
+    <button class="toggle" id="btn-restart" type="button"><span data-i18n="settings.restart">Начать уровень заново</span><span class="toggle-state">⟳</span></button>
+    <button class="toggle" id="btn-sound" type="button"><span data-i18n="settings.sound">Звук</span><span class="toggle-state" id="sound-state">вкл</span></button>
+    <button class="toggle" id="btn-vibro" type="button"><span data-i18n="settings.vibro">Вибрация</span><span class="toggle-state" id="vibro-state">вкл</span></button>
+    <div class="toggle toggle-static">
+      <span data-i18n="settings.language">Язык</span>
+      <span class="lang-switch">
+        <button class="lang-option" id="btn-lang-ru" type="button" data-lang="ru">RU</button>
+        <button class="lang-option" id="btn-lang-en" type="button" data-lang="en">EN</button>
+      </span>
+    </div>
+    <button class="toggle danger" id="btn-reset" type="button" data-i18n="settings.reset">Сбросить прогресс</button>
+    <button class="primary" id="btn-close-settings" type="button" data-i18n="settings.close">Закрыть</button>
   </div>
 </div>
 

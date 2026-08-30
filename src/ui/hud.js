@@ -1,12 +1,16 @@
 // DOM-оверлей поверх канваса: счётчики и кнопки. Разметка лежит
 // в index.html, здесь только связывание и обновление.
 
+import { t } from '../i18n.js';
+
 // Сколько бесплатных попыток в уровне — задаёт режим, здесь только
 // значения по умолчанию до его выбора.
 const DEFAULT_LIMITS = { undo: 3, hint: 2, post: 1 };
 
 export function createHud(handlers) {
   const limits = { ...DEFAULT_LIMITS };
+  // Последнее значение счётчика: при смене языка строку нужно собрать заново.
+  let lastMoves = 0;
   const root = document.getElementById('hud');
   const levelNumber = document.getElementById('level-number');
   const levelGoal = document.getElementById('level-goal');
@@ -45,7 +49,11 @@ export function createHud(handlers) {
     },
     // Счётчик ходов и ничего больше: порогов и оценок в игре нет.
     setGoal(moves) {
-      levelGoal.textContent = `Ходов ${moves}`;
+      lastMoves = moves;
+      levelGoal.textContent = t('hud.moves', { n: moves });
+    },
+    refreshLanguage() {
+      levelGoal.textContent = t('hud.moves', { n: lastMoves });
     },
     // Когда бесплатные попытки кончились — на бейдже значок рекламы.
     update(status) {
