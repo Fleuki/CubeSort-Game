@@ -1228,6 +1228,9 @@ async function boot() {
   requestAnimationFrame(() => {
     platform.ready();
     openMenu();
+    // Трек качаем после первого кадра: играть его всё равно нельзя
+    // до жеста игрока, а экран загрузки ждать его не должен.
+    sfx.loadMusic();
   });
 }
 

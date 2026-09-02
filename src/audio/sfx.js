@@ -10,7 +10,9 @@
 
 const SFX_PATH = 'assets/audio/sfx/';
 const MUSIC_PATH = 'assets/audio/music/';
-const MUSIC_FILE = 'theme.mp3';
+// Имя файла трека. Пусто — музыки в сборке нет: запрос не уходит, в консоли
+// не появляется 404, а переключатель «Музыка» прячется сам.
+const MUSIC_FILE = '';
 
 // Имя события → файл. Событие без файла звучать не будет, но и не сломает
 // ничего: игра просто промолчит в этом месте.
@@ -26,6 +28,25 @@ const SFX_FILES = {
   uiTap: 'ui-tap.wav',
   hint: 'hint.wav',
   postAdded: 'post-added.wav'
+};
+
+// Все файлы нормализованы по пику одинаково, поэтому баланс между
+// событиями задаётся здесь: в файлах его править нельзя — потеряется
+// при следующей пересборке пака.
+// Победа громче всех, щелчок интерфейса тише всех (он звучит чаще
+// остальных вместе взятых), отказы приглушены, чтобы не быть резкими.
+const SFX_GAINS = {
+  take: 0.55,
+  undo: 0.55,
+  complete: 0.8,
+  cap: 0.6,
+  land: 0.7,
+  denyColor: 0.4,
+  denySpace: 0.45,
+  win: 1,
+  uiTap: 0.25,
+  hint: 0.6,
+  postAdded: 0.55
 };
 
 const MASTER_VOLUME = 0.5;
@@ -123,15 +144,25 @@ function loadSamples() {
   });
 }
 
-// Музыку тянем только после первого жеста: до него браузер всё равно
-// не даст её запустить, а трафик уже потрачен.
-function loadMusic() {
-  if (musicRequested || !context) return Promise.resolve(null);
+// Загрузка трека и его запуск — разные вещи. Политика автоплея запрещает
+// играть до жеста, но не запрещает скачивать: грузим заранее, чтобы к моменту,
+// когда игрок откроет настройки, было известно, есть трек или нет.
+// Вызывается после первого кадра, чтобы не тормозить экран загрузки.
+export function loadMusic() {
+  if (musicRequested || !context || !MUSIC_FILE) return Promise.resolve(null);
   musicRequested = true;
   return loadSample('music', MUSIC_FILE, MUSIC_PATH).then((buffer) => {
     musicBuffer = buffer;
+    // Трек мог приехать уже после первого жеста — тогда запускаем сразу.
+    if (buffer && unlocked && !musicMuted) startMusic();
     return buffer;
   });
+}
+
+// Есть ли вообще что играть: по этому признаку интерфейс прячет
+// переключатель музыки, чтобы не показывать заведомо мёртвую кнопку.
+export function hasMusic() {
+  return Boolean(musicBuffer);
 }
 
 // --- громкость -----------------------------------------------------------
@@ -222,13 +253,14 @@ function stopMusic() {
 
 // --- воспроизведение -----------------------------------------------------
 
-function play(name, gain = 1) {
+function play(name) {
   if (!context || soundMuted || silenced) return;
   const buffer = buffers.get(name);
   if (!buffer) return;
   const source = context.createBufferSource();
   source.buffer = buffer;
-  if (gain === 1) {
+  const gain = SFX_GAINS[name];
+  if (gain === undefined || gain === 1) {
     source.connect(sfxGain);
   } else {
     const env = context.createGain();
@@ -325,9 +357,8 @@ export function playWin() {
   play('win');
 }
 
-// Нажатие кнопки интерфейса: тише игровых звуков, иначе меню трещит.
 export function playUiTap() {
-  play('uiTap', 0.7);
+  play('uiTap');
 }
 
 export function playHint() {

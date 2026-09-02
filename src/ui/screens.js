@@ -3,6 +3,7 @@
 
 import { MODE_IDS, MODES, MEDAL_COLORS, LEVEL_COUNT } from '../game/modes.js';
 import { t, getLanguage, setLanguage, LANGS } from '../i18n.js';
+import { hasMusic } from '../audio/sfx.js';
 
 const TOAST_MS = 1600;
 
@@ -37,6 +38,7 @@ export function createScreens(handlers) {
   const winCity = document.getElementById('win-city');
   const soundState = document.getElementById('sound-state');
   const musicState = document.getElementById('music-state');
+  const musicRow = document.getElementById('btn-music');
   const vibroState = document.getElementById('vibro-state');
   const toast = document.getElementById('toast');
   const restartButton = document.getElementById('btn-restart');
@@ -128,6 +130,9 @@ export function createScreens(handlers) {
     showSettings(settings, inGame) {
       lastSettings = { settings, inGame };
       soundState.textContent = t(settings.muted ? 'settings.off' : 'settings.on');
+      // Трека может не быть — тогда строки нет вовсе: выключенный переключатель
+      // без музыки обещает то, чего в игре не появится.
+      musicRow.classList.toggle('hidden', !hasMusic());
       musicState.textContent = t(settings.music ? 'settings.on' : 'settings.off');
       if (hasVibration) vibroState.textContent = t(settings.vibro ? 'settings.on' : 'settings.off');
       markLanguage();
