@@ -18,7 +18,7 @@
 - [x] **Название везде каноническое** — `<title>`, meta, меню, сплэш = «Кубоград»
       (см. `GAME_NAME.md`). Зафиксировано до генерации материалов.
 - [x] **Ноль тегов `<audio>` / `<video>`** — весь звук через Web Audio API
-      (`src/audio/sfx.js`). Проверено: `document.querySelectorAll('audio,video').length === 0`.
+      (`src/audio/sfx.js`): CC0-семплы декодируются в буферы, музыка тоже. Проверено: `document.querySelectorAll('audio,video').length === 0`.
       Значит нет системного плеера на десктопе (§1.6.2.5) и карточки в шторке
       уведомлений на мобильных (§1.6.1.6). `navigator.mediaSession` не используется.
 - [x] **Браузерная прокрутка убита** (§1.10.2) — `html, body { position: fixed; inset: 0 }`
