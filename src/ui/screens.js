@@ -3,6 +3,7 @@
 
 import { MODE_IDS, MODES, MEDAL_COLORS, LEVEL_COUNT } from '../game/modes.js';
 import { t, getLanguage, setLanguage, LANGS } from '../i18n.js';
+import { hasMusic } from '../audio/sfx.js';
 
 const TOAST_MS = 1600;
 
@@ -36,6 +37,8 @@ export function createScreens(handlers) {
   const winStats = document.getElementById('win-stats');
   const winCity = document.getElementById('win-city');
   const soundState = document.getElementById('sound-state');
+  const musicState = document.getElementById('music-state');
+  const musicRow = document.getElementById('btn-music');
   const vibroState = document.getElementById('vibro-state');
   const toast = document.getElementById('toast');
   const restartButton = document.getElementById('btn-restart');
@@ -51,6 +54,7 @@ export function createScreens(handlers) {
   document.getElementById('btn-menu-settings').addEventListener('click', handlers.openSettings);
   document.getElementById('btn-close-settings').addEventListener('click', handlers.closeSettings);
   document.getElementById('btn-sound').addEventListener('click', handlers.toggleSound);
+  document.getElementById('btn-music').addEventListener('click', handlers.toggleMusic);
   // Строки для вибрации нет вовсе, если устройство её не умеет: выключенный
   // переключатель только сбивал бы с толку. Сохранённое значение при этом
   // не трогаем — на телефоне игрок найдёт настройку такой, как оставил.
@@ -64,7 +68,10 @@ export function createScreens(handlers) {
     const node = document.getElementById(`btn-lang-${lang}`);
     if (!node) return;
     langButtons[lang] = node;
-    node.addEventListener('click', () => setLanguage(lang));
+    node.addEventListener('click', () => {
+      if (handlers.tap) handlers.tap();
+      setLanguage(lang);
+    });
   });
 
   function markLanguage() {
@@ -123,6 +130,10 @@ export function createScreens(handlers) {
     showSettings(settings, inGame) {
       lastSettings = { settings, inGame };
       soundState.textContent = t(settings.muted ? 'settings.off' : 'settings.on');
+      // Трека может не быть — тогда строки нет вовсе: выключенный переключатель
+      // без музыки обещает то, чего в игре не появится.
+      musicRow.classList.toggle('hidden', !hasMusic());
+      musicState.textContent = t(settings.music ? 'settings.on' : 'settings.off');
       if (hasVibration) vibroState.textContent = t(settings.vibro ? 'settings.on' : 'settings.off');
       markLanguage();
       // «Заново» нужен только внутри уровня.

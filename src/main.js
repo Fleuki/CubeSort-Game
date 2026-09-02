@@ -139,7 +139,7 @@ const app = {
   undoUsed: 0,
   hintsUsed: 0,
   extraPostUsed: false,
-  settings: { muted: false, vibro: true },
+  settings: { muted: false, vibro: true, music: true },
   progress: { level: 1 }
 };
 
@@ -154,39 +154,57 @@ if (reducedMotion) {
   app.fx.reducedMotion = true;
 }
 
+// Каждое нажатие в интерфейсе отзывается щелчком: без него меню
+// ощущается неживым.
+function tap() {
+  sfx.playUiTap();
+}
+
 const hud = createHud({
-  undo: () => requestUndo(),
-  hint: () => requestHint(),
-  post: () => requestExtraPost(),
-  settings: () => screens.showSettings(app.settings, app.screen === 'game'),
-  menu: () => openMenu()
+  undo: () => { tap(); requestUndo(); },
+  hint: () => { tap(); requestHint(); },
+  post: () => { tap(); requestExtraPost(); },
+  settings: () => { tap(); screens.showSettings(app.settings, app.screen === 'game'); },
+  menu: () => { tap(); openMenu(); }
 });
 
 const debug = createDebug();
 
 const screens = createScreens({
-  play: (mode) => startGame(mode),
-  next: () => nextLevel(),
-  openSettings: () => screens.showSettings(app.settings, app.screen === 'game'),
+  tap,
+  play: (mode) => { tap(); startGame(mode); },
+  next: () => { tap(); nextLevel(); },
+  openSettings: () => { tap(); screens.showSettings(app.settings, app.screen === 'game'); },
   closeSettings: () => {
+    tap();
     screens.hideSettings();
     persist();
   },
   restart: () => {
+    tap();
     screens.hideSettings();
     restartLevel();
   },
   toggleSound: () => {
     app.settings.muted = !app.settings.muted;
     applyMute();
+    tap();
+    screens.showSettings(app.settings, app.screen === 'game');
+  },
+  toggleMusic: () => {
+    app.settings.music = !app.settings.music;
+    applyMute();
+    tap();
     screens.showSettings(app.settings, app.screen === 'game');
   },
   toggleVibro: () => {
+    tap();
     app.settings.vibro = !app.settings.vibro;
     screens.showSettings(app.settings, app.screen === 'game');
   },
   // Сбрасывается только текущий режим — остальные не трогаем.
   resetProgress: () => {
+    tap();
     app.progress.level = 1;
     app.level = 1;
     app.slots[app.mode].medal = null;
@@ -197,12 +215,13 @@ const screens = createScreens({
   }
 });
 
-// Звук выключен, если так решил игрок или так требует площадка.
+// Звук и музыка выключаются раздельно, но запрет площадки бьёт по обоим.
 let platformAudio = true;
 // Первый кадр после паузы не должен нести накопленное время простоя.
 let skipDelta = false;
 function applyMute() {
-  sfx.setMuted(app.settings.muted || !platformAudio);
+  sfx.setSoundMuted(app.settings.muted || !platformAudio);
+  sfx.setMusicMuted(!app.settings.music || !platformAudio);
 }
 
 function vibrate(ms) {
@@ -851,9 +870,9 @@ async function nextLevel() {
   screens.hideAll();
   // Реклама только между уровнями и только когда ничего не анимируется.
   if (platform.canShowInterstitial(app.level)) {
-    sfx.setMuted(true);
+    sfx.setSilenced(true);
     await platform.showInterstitial(app.level);
-    applyMute();
+    sfx.setSilenced(false);
   }
   app.screen = 'game';
   hud.show();
@@ -900,7 +919,7 @@ async function requestUndo() {
   app.capAnim = null;
   app.hidden = null;
   app.undoUsed += 1;
-  sfx.playTake();
+  sfx.playUndo();
   updateHud();
   persist();
 }
@@ -918,6 +937,7 @@ async function requestHint() {
   app.hint = move;
   app.hintUntil = app.time + HINT_SHOW_MS;
   app.hintsUsed += 1;
+  sfx.playHint();
   updateHud();
 }
 
@@ -928,15 +948,16 @@ async function requestExtraPost() {
   app.state.posts.push([]);
   app.extraPostUsed = true;
   app.hand = null;
+  sfx.playPostAdded();
   clearHistory(app.history);
   rebuildLayout();
   updateHud();
 }
 
 async function earnReward() {
-  sfx.setMuted(true);
+  sfx.setSilenced(true);
   const rewarded = await platform.showRewarded();
-  applyMute();
+  sfx.setSilenced(false);
   if (!rewarded) screens.toast(t('toast.rewardFailed'));
   return rewarded;
 }
@@ -957,6 +978,7 @@ function persist() {
     version: SAVE_VERSION,
     muted: app.settings.muted,
     vibro: app.settings.vibro,
+    music: app.settings.music,
     mode: app.mode
   };
   MODE_IDS.forEach((mode) => {
@@ -985,11 +1007,15 @@ async function restore() {
   if (settings) {
     app.settings.muted = Boolean(settings.muted);
     app.settings.vibro = settings.vibro !== false;
+    // Настройка появилась позже сохранений — в старых её нет, и молчащая
+    // по умолчанию музыка была бы сюрпризом.
+    app.settings.music = settings.music !== false;
     if (MODE_IDS.indexOf(settings.mode) >= 0) app.mode = settings.mode;
   } else if (data.level !== undefined) {
     // Сохранение до режимов: настройки общие, прогресс уходит в средний.
     app.settings.muted = Boolean(data.muted);
     app.settings.vibro = data.vibro !== false;
+    app.settings.music = data.music !== false;
     app.mode = DEFAULT_MODE;
   }
   MODE_IDS.forEach((mode) => {
@@ -1107,10 +1133,14 @@ function render() {
 
 // --- ввод -----------------------------------------------------------------
 
+// Звук разблокирует любой первый жест, а не только тап по полю: игрок
+// сначала жмёт кнопки меню, и до канваса музыка бы не дожила.
+document.addEventListener('pointerdown', () => sfx.unlockAudio(), { once: true });
+
 // Только pointerdown: touchstart вместе с mousedown дают двойное срабатывание.
 canvas.addEventListener('pointerdown', (event) => {
   event.preventDefault();
-  sfx.resumeAudio();
+  sfx.unlockAudio();
   if (!app.layout || app.screen !== 'game') return;
   const rect = canvas.getBoundingClientRect();
   const index = hitTest(app.layout, event.clientX - rect.left, event.clientY - rect.top);
@@ -1202,6 +1232,9 @@ async function boot() {
   requestAnimationFrame(() => {
     platform.ready();
     openMenu();
+    // Трек качаем после первого кадра: играть его всё равно нельзя
+    // до жеста игрока, а экран загрузки ждать его не должен.
+    sfx.loadMusic();
   });
 }
 
