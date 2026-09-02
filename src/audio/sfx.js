@@ -43,7 +43,7 @@ const SFX_FILES = {
 const SFX_GAINS = {
   take: 0.94,
   undo: 0.37,
-  complete: 0.47,
+  complete: 0.22,
   cap: 0.43,
   land: 0.42,
   denyColor: 0.2,
