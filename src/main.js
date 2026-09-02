@@ -1133,6 +1133,10 @@ function render() {
 
 // --- ввод -----------------------------------------------------------------
 
+// Звук разблокирует любой первый жест, а не только тап по полю: игрок
+// сначала жмёт кнопки меню, и до канваса музыка бы не дожила.
+document.addEventListener('pointerdown', () => sfx.unlockAudio(), { once: true });
+
 // Только pointerdown: touchstart вместе с mousedown дают двойное срабатывание.
 canvas.addEventListener('pointerdown', (event) => {
   event.preventDefault();
