@@ -445,10 +445,6 @@ html, body {
 html.lang-ready #screen-loading .logo { opacity: 1; transition: opacity 0.15s ease; }
 
 </style>
-<!-- SDK площадки — единственный внешний запрос, разрешённый правилом 7.
-     Не async и не defer: window.bridge должен существовать к запуску модуля.
-     Если скрипт не загрузился, detectAdapter() уходит на заглушку. -->
-<script src="https://bridge.playgama.com/v2/stable/playgama-bridge.js"></script>
 </head>
 <body>
 <canvas id="scene"></canvas>
@@ -543,7 +539,7 @@ const __src_i18n_js = (() => {
 // Словари и выбор языка. Модуль не трогает DOM и не ходит в сеть:
 // переводы лежат прямо здесь, потому что порталы запрещают догружать
 // файлы локализации по сети. Русский — основной, английский — для
-// зарубежных площадок Playgama.
+// игроков Яндекс Игр с нерусским языком площадки.
 
 const STORAGE_KEY = 'cubesort.lang';
 const LANGS = ['ru', 'en'];
@@ -4734,21 +4730,11 @@ function createNoneAdapter() {
 return { createNoneAdapter };
 })();
 const __src_platform_yandex_js = (() => {
-// Реализация фасада под Яндекс SDK. Скрипт SDK подключается площадкой
-// или подгружается здесь — только на домене Яндекса.
+// Реализация фасада под Яндекс SDK. Скрипт /sdk.js подключён тегом
+// в index.html; догружать его отсюда нельзя — модерация (п. 1.19.1)
+// принимает только способ из документации.
 
-const SDK_URL = 'https://yandex.ru/games/sdk/v2';
 const LOCAL_KEY = 'cubesort.save';
-
-function loadScript(url) {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = url;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-}
 
 function createYandexAdapter() {
   let ysdk = null;
@@ -4759,7 +4745,6 @@ function createYandexAdapter() {
   return {
     name: 'yandex',
     async init() {
-      if (!window.YaGames) await loadScript(SDK_URL);
       ysdk = await window.YaGames.init();
       window.ysdk = ysdk;
       // Язык площадки читаем через SDK сразу после init, до любого UI (§2.14).
@@ -4854,180 +4839,12 @@ function createYandexAdapter() {
 
 return { createYandexAdapter };
 })();
-const __src_platform_playgama_js = (() => {
-// Реализация фасада под Playgama Bridge v2. Все имена методов и значения
-// состояний — из документации моста, не из головы:
-// https://wiki.playgama.com/playgama/bridge-sdk/api
-// Модули моста (platform, storage, advertisement) недоступны до
-// bridge.initialize() — обращаться к ним раньше нельзя, SDK ругается в консоль.
-
-const SAVE_KEY = 'save';
-// Зеркало сейва: тот же ключ, что у заглушки и Яндекса, — иначе прогресс
-// сессии, отработавшей без моста, потеряется при следующем заходе.
-const LOCAL_KEY = 'cubesort.save';
-// platform.id в окружении, которое мост не поддерживает: локальный запуск,
-// GitHub Pages. Играем там как без SDK.
-const MOCK_PLATFORM = 'mock';
-
-const INTERSTITIAL_CLOSED = 'closed';
-const INTERSTITIAL_FAILED = 'failed';
-const REWARDED_REWARDED = 'rewarded';
-const REWARDED_CLOSED = 'closed';
-const REWARDED_FAILED = 'failed';
-
-function createPlaygamaAdapter() {
-  const bridge = window.bridge;
-  let lang = '';
-  let platformId = '';
-
-  function events() {
-    return (bridge && bridge.EVENT_NAME) || {};
-  }
-
-  function messages() {
-    return (bridge && bridge.PLATFORM_MESSAGE) || {};
-  }
-
-  return {
-    name: 'playgama',
-    async init() {
-      await bridge.initialize();
-      platformId = bridge.platform.id || '';
-      // Язык моста: площадка, а если она молчит — язык браузера. Пустую
-      // строку отдаём как «неизвестно», чтобы решал i18n.
-      lang = bridge.platform.language || '';
-    },
-    // Мост поднялся, но настоящей площадки за ним нет.
-    isMock() {
-      return platformId === MOCK_PLATFORM;
-    },
-    language() {
-      return lang;
-    },
-    isAudioEnabled() {
-      return bridge.platform.isAudioEnabled !== false;
-    },
-    // Площадка вправе потребовать тишины — например, когда игрок ушёл
-    // на другую вкладку портала.
-    onAudioStateChanged(listener) {
-      bridge.platform.on(events().AUDIO_STATE_CHANGED, (enabled) => listener(enabled !== false));
-    },
-    // Пауза по требованию площадки: игрок открыл оверлей портала, свернул
-    // вкладку, ответил на звонок.
-    isPaused() {
-      return bridge.platform.isPaused === true;
-    },
-    onPauseStateChanged(listener) {
-      bridge.platform.on(events().PAUSE_STATE_CHANGED, (paused) => listener(paused === true));
-    },
-    ready() {
-      bridge.platform.sendMessage(messages().GAME_READY);
-    },
-    gameplayStart(info) {
-      bridge.platform.sendMessage(messages().LEVEL_STARTED, info);
-    },
-    gameplayStop(info) {
-      bridge.platform.sendMessage(messages().LEVEL_PAUSED, info);
-    },
-    gameplayComplete(info) {
-      bridge.platform.sendMessage(messages().LEVEL_COMPLETED, info);
-    },
-    showAd() {
-      const ads = bridge.advertisement;
-      if (!ads) return Promise.resolve(false);
-      return new Promise((resolve) => {
-        const name = events().INTERSTITIAL_STATE_CHANGED;
-        const handler = (state) => {
-          if (state !== INTERSTITIAL_CLOSED && state !== INTERSTITIAL_FAILED) return;
-          ads.off(name, handler);
-          resolve(state === INTERSTITIAL_CLOSED);
-        };
-        ads.on(name, handler);
-        ads.showInterstitial();
-      });
-    },
-    showRewarded() {
-      const ads = bridge.advertisement;
-      if (!ads) return Promise.resolve(false);
-      return new Promise((resolve) => {
-        const name = events().REWARDED_STATE_CHANGED;
-        let rewarded = false;
-        const handler = (state) => {
-          // Награда только по 'rewarded': на 'closed' игрок получил бы её,
-          // не досмотрев ролик.
-          if (state === REWARDED_REWARDED) rewarded = true;
-          if (state !== REWARDED_CLOSED && state !== REWARDED_FAILED) return;
-          ads.off(name, handler);
-          resolve(rewarded);
-        };
-        ads.on(name, handler);
-        ads.showRewarded();
-      });
-    },
-    // storage.set принимает два массива — ключи и значения.
-    async save(data) {
-      writeLocal(data);
-      try {
-        await bridge.storage.set([SAVE_KEY], [data]);
-      } catch (error) {
-        // Облако недоступно — прогресс остался в зеркале.
-      }
-    },
-    // storage.get возвращает массив в порядке запрошенных ключей,
-    // null за отсутствующий ключ.
-    async load() {
-      const cloud = await readCloud(bridge);
-      const local = readLocal();
-      if (!cloud) return local;
-      if (!local) return cloud;
-      // Сессия без моста писала только в зеркало. Если оно свежее облака,
-      // поднимаем его вперёд — иначе прогресс той сессии откатится.
-      return stampOf(local) > stampOf(cloud) ? local : cloud;
-    }
-  };
-}
-
-async function readCloud(bridge) {
-  try {
-    const data = await bridge.storage.get([SAVE_KEY]);
-    return (Array.isArray(data) ? data[0] : data) || null;
-  } catch (error) {
-    return null;
-  }
-}
-
-function readLocal() {
-  try {
-    const raw = localStorage.getItem(LOCAL_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (error) {
-    return null;
-  }
-}
-
-function writeLocal(data) {
-  try {
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
-  } catch (error) {
-    // Приватный режим режет localStorage — облако всё равно основное.
-  }
-}
-
-// Сохранения до появления штампа считаем самыми старыми: при равенстве
-// выигрывает облако.
-function stampOf(data) {
-  return data && typeof data.savedAt === 'number' ? data.savedAt : 0;
-}
-
-return { MOCK_PLATFORM, createPlaygamaAdapter };
-})();
 const __src_platform_sdk_js = (() => {
 // Единый фасад площадок. Игра знает только про эти методы,
 // про конкретный SDK не знает никто, кроме реализаций.
 
 const { createNoneAdapter } = __src_platform_none_js;
 const { createYandexAdapter } = __src_platform_yandex_js;
-const { createPlaygamaAdapter } = __src_platform_playgama_js;
 
 const INTERSTITIAL_COOLDOWN_MS = 180000;
 const FIRST_AD_LEVEL = 3;
@@ -5040,14 +4857,10 @@ let lastInterstitial = 0;
 let audioListener = null;
 let pauseListener = null;
 
-// Яндекс проверяется первым: под него написан отдельный адаптер по
-// требованиям гайда, и мост его подменять не должен.
+// YaGames появляется только если /sdk.js отдал сервер Яндекса.
+// Локально скрипта нет — играем на заглушке.
 function detectAdapter() {
-  const host = window.location.hostname || '';
-  if (window.YaGames || host.includes('yandex') || host.includes('games.s3')) return createYandexAdapter();
-  // Признак моста — только метод initialize. Трогать bridge.platform до
-  // инициализации нельзя: SDK возвращает undefined и пишет ошибку в консоль.
-  if (window.bridge && typeof window.bridge.initialize === 'function') return createPlaygamaAdapter();
+  if (window.YaGames) return createYandexAdapter();
   return createNoneAdapter();
 }
 
@@ -5063,9 +4876,6 @@ async function initPlatform() {
   adapter = candidate;
   try {
     await withTimeout(Promise.resolve(candidate.init()), INIT_TIMEOUT_MS);
-    // Мост поднялся, но площадки за ним нет (локальный запуск, GitHub Pages):
-    // ведём себя ровно так, как будто SDK не подключали.
-    if (candidate.isMock && candidate.isMock()) adapter = createNoneAdapter();
   } catch (error) {
     // Если SDK не поднялся, играем без него — это не повод падать.
     adapter = createNoneAdapter();
@@ -5121,11 +4931,9 @@ function gameplayStop(info) {
   adapter.gameplayStop(info);
 }
 
-// Уровень пройден — это отдельное сообщение, а не «геймплей остановлен».
-// Адаптеры без него (Яндекс, заглушка) просто закрывают геймплей.
+// У Яндекса нет отдельного сообщения «уровень пройден» — закрываем геймплей.
 function gameplayComplete(info) {
-  if (adapter.gameplayComplete) adapter.gameplayComplete(info);
-  else adapter.gameplayStop(info);
+  adapter.gameplayStop(info);
 }
 
 // Интерстишл не чаще раза в 3 минуты и не раньше третьего уровня.

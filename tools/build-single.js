@@ -37,7 +37,6 @@ const MODULES = [
   'src/ui/debug.js',
   'src/platform/none.js',
   'src/platform/yandex.js',
-  'src/platform/playgama.js',
   'src/platform/sdk.js',
   'src/main.js'
 ];
@@ -92,6 +91,8 @@ function build() {
   });
 
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8')
+    // Превью открывается с file://, где /sdk.js не существует.
+    .replace(/<!-- Yandex Games SDK[\s\S]*?<script src="\/sdk\.js"><\/script>\n/, '')
     .replace('<link rel="stylesheet" href="style.css">', `<style>\n${css}\n</style>`)
     .replace('<script type="module" src="src/main.js"></script>', `<script type="module">\n${chunks.join('\n')}\n</script>`);
 
