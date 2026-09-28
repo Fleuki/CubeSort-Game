@@ -1,18 +1,8 @@
-// Реализация фасада под Яндекс SDK. Скрипт SDK подключается площадкой
-// или подгружается здесь — только на домене Яндекса.
+// Реализация фасада под Яндекс SDK. Скрипт /sdk.js подключён тегом
+// в index.html; догружать его отсюда нельзя — модерация (п. 1.19.1)
+// принимает только способ из документации.
 
-const SDK_URL = 'https://yandex.ru/games/sdk/v2';
 const LOCAL_KEY = 'cubesort.save';
-
-function loadScript(url) {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = url;
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-}
 
 export function createYandexAdapter() {
   let ysdk = null;
@@ -23,7 +13,6 @@ export function createYandexAdapter() {
   return {
     name: 'yandex',
     async init() {
-      if (!window.YaGames) await loadScript(SDK_URL);
       ysdk = await window.YaGames.init();
       window.ysdk = ysdk;
       // Язык площадки читаем через SDK сразу после init, до любого UI (§2.14).

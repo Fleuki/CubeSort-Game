@@ -272,7 +272,9 @@ window.addEventListener('focus', () => actx.resume());
 Главная ошибка из отказа: игра уже интерактивна, а `ready()` вызывается позже. Порядок должен быть такой:
 
 ```html
-<script src="https://yandex.ru/games/sdk/v2"></script>
+<!-- Yandex Games SDK: только так, по документации (п. 1.19.1).
+     Относительный путь, тег в <head>, без динамической подгрузки из JS. -->
+<script src="/sdk.js"></script>
 ```
 
 ```js
